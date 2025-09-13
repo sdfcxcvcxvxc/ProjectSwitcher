@@ -1,4 +1,4 @@
-// src/providers/projectTreeDataProvider.ts - Simplified UI with enable/disable toggle
+// src/providers/projectTreeDataProvider.ts - Updated with dynamic toggle icons
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectConfig, ProjectTreeItem, WorkspaceMode } from '../models/models';
@@ -112,7 +112,7 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         const sessionEnabled = project.sessionEnabled !== false;
         const hasSession = state.sessions.has(project.id);
 
-        // REQUIREMENT 4: Check if project should be disabled/dimmed
+        // Check if project should be disabled/dimmed
         const isProjectEnabled = project.enabled !== false; // Default to true
 
         const projectName = `[${project.order}] ${project.name}`;
@@ -125,8 +125,12 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         item.projectId = project.id;
         item.project = project;
 
-        // REQUIREMENT 4: Set different context value for disabled projects
-        item.contextValue = isProjectEnabled ? 'project' : 'disabledProject';
+        // Set context value for different menu items - UPDATED to include enabled/disabled status
+        if (isProjectEnabled) {
+            item.contextValue = 'project';
+        } else {
+            item.contextValue = 'disabledProject';
+        }
 
         // Show current project with different styling
         if (isCurrentProject && isProjectEnabled) {
@@ -155,7 +159,7 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
             }
             item.description = description;
         } else {
-            // REQUIREMENT 4: Disabled project styling - dimmed appearance
+            // Disabled project styling - dimmed appearance
             item.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('disabledForeground'));
             item.description = '• disabled';
 
@@ -194,11 +198,14 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
 
         if (!isProjectEnabled) {
             tooltip += `\nStatus: Disabled`;
+            tooltip += `\nClick enable icon to re-enable`;
+        } else {
+            tooltip += `\nClick disable icon to disable project`;
         }
 
         item.tooltip = tooltip;
 
-        // REQUIREMENT 1: Direct click to switch project (only for enabled projects)
+        // Direct click to switch project (only for enabled projects)
         if (isProjectEnabled) {
             item.command = {
                 command: 'project-switcher.switchProject',
