@@ -87,7 +87,7 @@
       {
         "command": "project-switcher.showProjectMenu",
         "title": "Project Menu",
-        "icon": "$(ellipsis)"
+        "icon": "$(list-selection)"
       },
       {
         "command": "project-switcher.enable",
@@ -102,12 +102,32 @@
       {
         "command": "project-switcher.toggleMode",
         "title": "Toggle Project Switcher",
-        "icon": "$(toggle-right)"
+        "icon": "$(settings-gear)"
       },
       {
         "command": "project-switcher.toggleFiltering",
         "title": "Toggle Project Filtering",
         "icon": "$(filter)"
+      },
+      {
+        "command": "project-switcher.openProjectSwitchMenu",
+        "title": "Open Project Switch Menu"
+      },
+      {
+        "command": "project-switcher.debugState",
+        "title": "Debug: Show Extension State"
+      },
+      {
+        "command": "project-switcher.debugContext",
+        "title": "Debug: Check VS Code Contexts"
+      },
+      {
+        "command": "project-switcher.debugCommands",
+        "title": "Debug: List Registered Commands"
+      },
+      {
+        "command": "project-switcher.debugActivityBar",
+        "title": "Debug: Activity Bar Issues"
       }
     ],
     "keybindings": [
@@ -166,15 +186,10 @@
         "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
-        "command": "project-switcher.toggleFiltering",
-        "key": "ctrl+alt+f",
-        "mac": "cmd+alt+f",
-        "when": "config.projectSwitcher.enableKeyboardShortcuts"
-      },
-      {
-        "command": "project-switcher.showProjectMenu",
-        "key": "ctrl+alt+p",
-        "mac": "cmd+alt+p"
+        "command": "project-switcher.openProjectSwitchMenu",
+        "key": "ctrl+alt+m",
+        "mac": "cmd+alt+m",
+        "when": "projectSwitcher.isEnabled"
       }
     ],
     "viewsContainers": {
@@ -191,7 +206,13 @@
         {
           "id": "projectManager",
           "name": "Projects",
-          "contextualTitle": "Project Manager",
+          "contextualTitle": "Project Manager"
+        }
+      ],
+      "explorer": [
+        {
+          "id": "allProjects",
+          "name": "ALL PROJECTS",
           "when": "projectSwitcher.isEnabled"
         }
       ]
@@ -213,6 +234,11 @@
         {
           "command": "project-switcher.switchProject",
           "when": "view == projectManager && viewItem == project",
+          "group": "navigation@1"
+        },
+        {
+          "command": "project-switcher.switchProject",
+          "when": "view == allProjects && viewItem == allProject",
           "group": "navigation@1"
         },
         {

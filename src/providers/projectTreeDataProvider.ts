@@ -1,6 +1,7 @@
+// src/providers/projectTreeDataProvider.ts - Updated to show helpful messages
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { state, ProjectConfig, ProjectTreeItem } from '../models/models';
+import { state, ProjectConfig, ProjectTreeItem, WorkspaceMode } from '../models/models';
 
 export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectTreeItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<ProjectTreeItem | undefined>();
@@ -16,12 +17,17 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
 
     getChildren(element?: ProjectTreeItem): Thenable<ProjectTreeItem[]> {
         if (!element) {
-            // Root level - show all projects sorted by order
+            // Root level - check if Project Switcher is enabled
+            if (!state.isProjectSwitcherEnabled) {
+                return this.getDisabledModeItems();
+            }
+
+            // Project Switcher is enabled - show all projects sorted by order
             const sortedProjects = [...state.projects].sort((a, b) => a.order - b.order);
 
             if (sortedProjects.length === 0) {
                 const item = new vscode.TreeItem('No projects configured') as ProjectTreeItem;
-                item.description = 'Click + to add current workspace';
+                item.description = 'Enable Project Switcher first';
                 item.projectId = '';
                 item.project = {} as ProjectConfig;
                 return Promise.resolve([item]);
@@ -31,6 +37,54 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         }
 
         return Promise.resolve([]);
+    }
+
+    private getDisabledModeItems(): Promise<ProjectTreeItem[]> {
+        const items: ProjectTreeItem[] = [];
+
+        if (state.workspaceMode === WorkspaceMode.ParentDirectory) {
+            // Parent directory detected - show enable option
+            const enableItem = new vscode.TreeItem('Enable Project Switcher') as ProjectTreeItem;
+            enableItem.description = 'Manage subdirectories as separate projects';
+            enableItem.iconPath = new vscode.ThemeIcon('folder-library', new vscode.ThemeColor('terminal.ansiGreen'));
+            enableItem.tooltip = 'Click to enable Project Switcher for this workspace';
+            enableItem.command = {
+                command: 'project-switcher.toggleMode',
+                title: 'Enable Project Switcher'
+            };
+            enableItem.projectId = '';
+            enableItem.project = {} as ProjectConfig;
+            items.push(enableItem);
+
+            // Show workspace info
+            const infoItem = new vscode.TreeItem('Multi-folder workspace detected') as ProjectTreeItem;
+            infoItem.description = 'Click above to organize';
+            infoItem.iconPath = new vscode.ThemeIcon('info');
+            infoItem.projectId = '';
+            infoItem.project = {} as ProjectConfig;
+            items.push(infoItem);
+
+        } else if (state.workspaceMode === WorkspaceMode.SingleProject) {
+            // Single project workspace
+            const infoItem = new vscode.TreeItem('Single project workspace') as ProjectTreeItem;
+            infoItem.description = 'Project Switcher not needed';
+            infoItem.iconPath = new vscode.ThemeIcon('folder', new vscode.ThemeColor('terminal.ansiBlue'));
+            infoItem.tooltip = 'This workspace contains a single project. Project Switcher is designed for parent directories with multiple project folders.';
+            infoItem.projectId = '';
+            infoItem.project = {} as ProjectConfig;
+            items.push(infoItem);
+
+        } else {
+            // No workspace
+            const noWorkspaceItem = new vscode.TreeItem('No workspace open') as ProjectTreeItem;
+            noWorkspaceItem.description = 'Open a folder first';
+            noWorkspaceItem.iconPath = new vscode.ThemeIcon('folder-opened', new vscode.ThemeColor('terminal.ansiYellow'));
+            noWorkspaceItem.projectId = '';
+            noWorkspaceItem.project = {} as ProjectConfig;
+            items.push(noWorkspaceItem);
+        }
+
+        return Promise.resolve(items);
     }
 
     private createProjectTreeItem(project: ProjectConfig): ProjectTreeItem {
@@ -59,6 +113,11 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
                 description += hasSession ? ' • session saved' : ' • session enabled';
             } else {
                 description += ' • session disabled';
+            }
+
+            // Add filtering status to active project
+            if (state.workspaceFilter?.isCurrentlyFiltering()) {
+                description += ' • filtered';
             }
 
             item.description = description;
@@ -93,6 +152,14 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
                 const sessionDate = new Date(session.lastSaved).toLocaleString();
                 tooltip += `\nSession saved: ${sessionDate} (${session.tabs.length} tabs)`;
             }
+        }
+
+        // Add filtering status to tooltip
+        if (isCurrentProject && state.workspaceFilter) {
+            const filterStatus = state.workspaceFilter.isCurrentlyFiltering() ?
+                'Active (showing only this project)' :
+                'Disabled (showing all folders)';
+            tooltip += `\nFiltering: ${filterStatus}`;
         }
 
         tooltip += `\nShortcut: Ctrl+Alt+${project.order}`;

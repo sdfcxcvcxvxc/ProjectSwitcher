@@ -1,4 +1,4 @@
-// src/commands/projectCommands.ts - Enhanced with improved filtering support
+// src/commands/projectCommands.ts - Enhanced with Ctrl+Alt+M menu and simplified UI
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectTreeItem, ProjectConfig } from '../models/models';
@@ -24,6 +24,8 @@ export function registerProjectCommands(
     treeDataProvider: ProjectTreeDataProvider,
     sessionManager: SessionManager
 ) {
+    Logger.info('=== Registering project commands ===');
+
     const commands = [
         // Core project management
         vscode.commands.registerCommand('project-switcher.removeProject', (item: ProjectTreeItem) => removeProject(item, context, treeDataProvider, sessionManager)),
@@ -46,6 +48,9 @@ export function registerProjectCommands(
         // Enhanced filtering command
         vscode.commands.registerCommand('project-switcher.toggleFiltering', () => toggleProjectFiltering(context, treeDataProvider)),
 
+        // NEW: Ctrl+Alt+M command for project switch menu (only works when enabled)
+        vscode.commands.registerCommand('project-switcher.openProjectSwitchMenu', () => openProjectSwitchMenu(context, treeDataProvider, sessionManager)),
+
         // Keyboard shortcut commands (1-9)
         ...Array.from({ length: 9 }, (_, i) => {
             const order = i + 1;
@@ -55,7 +60,61 @@ export function registerProjectCommands(
         }),
     ];
 
-    commands.forEach(cmd => context.subscriptions.push(cmd));
+    Logger.info(`Registering ${commands.length} commands...`);
+    commands.forEach((cmd, index) => {
+        context.subscriptions.push(cmd);
+        Logger.debug(`Command ${index + 1} registered`);
+    });
+    Logger.info('All project commands registered successfully');
+}
+
+// NEW: Project switch menu accessible only when Project Switcher is enabled
+async function openProjectSwitchMenu(
+    context: vscode.ExtensionContext,
+    treeDataProvider: ProjectTreeDataProvider,
+    sessionManager: SessionManager
+) {
+    if (!state.isProjectSwitcherEnabled) {
+        vscode.window.showWarningMessage('Project Switcher is not enabled. Enable it first to use this feature.');
+        return;
+    }
+
+    if (state.projects.length === 0) {
+        vscode.window.showInformationMessage('No projects configured. Enable Project Switcher first.');
+        return;
+    }
+
+    const availableProjects = [...state.projects]
+        .filter(project => project.id !== state.currentProjectId) // Exclude current project
+        .sort((a, b) => a.order - b.order);
+
+    if (availableProjects.length === 0) {
+        vscode.window.showInformationMessage('No other projects available to switch to.');
+        return;
+    }
+
+    const items = availableProjects.map(project => {
+        const sessionInfo = project.sessionEnabled !== false ?
+            (state.sessions.has(project.id) ? ' • saved session' : ' • session enabled') :
+            ' • session disabled';
+
+        return {
+            label: `[${project.order}] ${project.name}`,
+            description: project.path,
+            detail: `${project.description || ''}${sessionInfo}`,
+            project
+        };
+    });
+
+    const selection = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select project to switch to (Ctrl+Alt+M)',
+        matchOnDescription: true,
+        matchOnDetail: true
+    });
+
+    if (selection) {
+        await performProjectSwitch(selection.project, context, treeDataProvider, sessionManager);
+    }
 }
 
 // Enhanced function to toggle project filtering
@@ -462,15 +521,13 @@ async function moveProjectDown(
     }
 }
 
-// Enhanced project menu with filtering option
+// Simplified project menu (removed duplicated functionality since we have Ctrl+Alt+M now)
 async function showProjectMenu(
     context: vscode.ExtensionContext,
     treeDataProvider: ProjectTreeDataProvider,
     sessionManager: SessionManager
 ) {
-    const items = [
-        'Switch Project',
-    ];
+    const items = [];
 
     // Add filtering option if Project Switcher is enabled
     if (state.isProjectSwitcherEnabled && state.workspaceFilter) {
@@ -482,20 +539,16 @@ async function showProjectMenu(
     items.push('Manage Projects');
 
     if (state.currentProjectId) {
-        items.splice(-1, 0, 'Save Current Session');
+        items.push('Save Current Session');
     }
 
     items.push('Clear All Sessions');
 
     const selection = await vscode.window.showQuickPick(items, {
-        placeHolder: 'Project Switcher'
+        placeHolder: 'Project Switcher Menu'
     });
 
     switch (selection) {
-        case 'Switch Project':
-            await showProjectSwitchMenu(context, treeDataProvider, sessionManager);
-            break;
-
         case 'Enable Project Filtering':
         case 'Disable Project Filtering':
             await toggleProjectFiltering(context, treeDataProvider);
@@ -523,43 +576,6 @@ async function showProjectMenu(
                 vscode.window.showInformationMessage('All sessions cleared');
             }
             break;
-    }
-}
-
-async function showProjectSwitchMenu(
-    context: vscode.ExtensionContext,
-    treeDataProvider: ProjectTreeDataProvider,
-    sessionManager: SessionManager
-) {
-    if (state.projects.length === 0) {
-        vscode.window.showInformationMessage('No projects configured. Enable Project Switcher first.');
-        return;
-    }
-
-    const sortedProjects = [...state.projects].sort((a, b) => a.order - b.order);
-
-    const items = sortedProjects.map(project => {
-        const isActive = project.id === state.currentProjectId;
-        const sessionInfo = project.sessionEnabled !== false ?
-            (state.sessions.has(project.id) ? ' • saved session' : ' • session enabled') :
-            ' • session disabled';
-
-        return {
-            label: `[${project.order}] ${project.name}${isActive ? ' (active)' : ''}`,
-            description: project.path,
-            detail: `${project.description || ''}${sessionInfo}`,
-            project
-        };
-    });
-
-    const selection = await vscode.window.showQuickPick(items, {
-        placeHolder: 'Select project to switch to',
-        matchOnDescription: true,
-        matchOnDetail: true
-    });
-
-    if (selection) {
-        await performProjectSwitch(selection.project, context, treeDataProvider, sessionManager);
     }
 }
 

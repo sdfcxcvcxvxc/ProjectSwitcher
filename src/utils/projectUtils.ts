@@ -1,4 +1,4 @@
-// src/utils/projectUtils.ts - Enhanced with proper filtering integration
+// src/utils/projectUtils.ts - Fixed disable function to keep activity bar visible
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -16,6 +16,9 @@ export function loadProjects(context: vscode.ExtensionContext) {
 export function saveProjects(context: vscode.ExtensionContext) {
     context.globalState.update('projects', state.projects);
     Logger.debug(`Saved ${state.projects.length} projects`);
+
+    // Refresh both tree providers when projects change
+    vscode.commands.executeCommand('project-switcher.refreshAllTrees');
 }
 
 export async function detectWorkspaceMode(): Promise<WorkspaceMode> {
@@ -431,10 +434,10 @@ export function deleteProject(projectId: string): boolean {
     return true;
 }
 
-// Enhanced disable function with workspace filter restoration
+// FIXED: Disable function that keeps activity bar visible
 export async function disableProjectSwitcher(context: vscode.ExtensionContext): Promise<void> {
     const confirm = await vscode.window.showWarningMessage(
-        'This will disable Project Switcher and clear all project configurations. Continue?',
+        'This will disable Project Switcher and clear all project configurations. The extension will remain accessible. Continue?',
         { modal: true },
         'Disable',
         'Cancel'
@@ -454,8 +457,11 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
         state.isProjectFilteringEnabled = false;
         saveProjects(context);
 
-        vscode.window.showInformationMessage('Project Switcher disabled');
-        Logger.info('Project Switcher disabled by user');
+        // IMPORTANT: Don't set the context to false - keep activity bar visible
+        // The extension should remain accessible for future enabling
+
+        vscode.window.showInformationMessage('Project Switcher disabled. Extension remains available for future use.');
+        Logger.info('Project Switcher disabled by user, extension remains accessible');
     }
 }
 

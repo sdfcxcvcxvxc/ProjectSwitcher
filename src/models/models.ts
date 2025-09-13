@@ -1,4 +1,4 @@
-// src/models/models.ts - Updated with WorkspaceFilter support
+// src/models/models.ts - Updated with enhanced tree item support
 import * as vscode from 'vscode';
 import { WorkspaceFilter } from '../utils/workspaceFilter';
 
@@ -48,11 +48,11 @@ export const state = {
     currentProjectId: undefined as string | undefined,
     workspaceMode: WorkspaceMode.None,
     isProjectSwitcherEnabled: false,
-    isProjectFilteringEnabled: false, // New field for filtering state
+    isProjectFilteringEnabled: false, // Field for filtering state
     isInitialized: false,
     statusBarItem: undefined as vscode.StatusBarItem | undefined,
     sessionManager: undefined as any,
-    workspaceFilter: undefined as WorkspaceFilter | undefined, // New field for workspace filter
+    workspaceFilter: undefined as WorkspaceFilter | undefined, // Field for workspace filter
 };
 
 export interface ProjectTreeItem extends vscode.TreeItem {
