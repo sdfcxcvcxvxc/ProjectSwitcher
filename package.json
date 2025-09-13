@@ -1,0 +1,259 @@
+{
+  "name": "project-switcher",
+  "displayName": "Project Switcher",
+  "description": "Switch between project folders while preserving tabs and sessions",
+  "version": "0.0.1",
+  "publisher": "your-publisher",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/project-switcher.git"
+  },
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.50.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "project",
+    "workspace",
+    "switcher",
+    "tabs",
+    "session"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "project-switcher.addProject",
+        "title": "Add Current Workspace",
+        "icon": "$(add)"
+      },
+      {
+        "command": "project-switcher.removeProject",
+        "title": "Remove Project",
+        "icon": "$(remove)"
+      },
+      {
+        "command": "project-switcher.switchProject",
+        "title": "Switch to Project"
+      },
+      {
+        "command": "project-switcher.editProject",
+        "title": "Edit Project",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "project-switcher.toggleSessionManagement",
+        "title": "Toggle Session Management",
+        "icon": "$(record)"
+      },
+      {
+        "command": "project-switcher.saveSession",
+        "title": "Save Session",
+        "icon": "$(save)"
+      },
+      {
+        "command": "project-switcher.clearSession",
+        "title": "Clear Session",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "project-switcher.moveUp",
+        "title": "Move Up",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "project-switcher.moveDown",
+        "title": "Move Down", 
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "project-switcher.refreshProjects",
+        "title": "Refresh Projects",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "project-switcher.showProjectMenu",
+        "title": "Project Menu",
+        "icon": "$(ellipsis)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "project-switcher.switchToProject1",
+        "key": "ctrl+alt+1",
+        "mac": "cmd+alt+1"
+      },
+      {
+        "command": "project-switcher.switchToProject2", 
+        "key": "ctrl+alt+2",
+        "mac": "cmd+alt+2"
+      },
+      {
+        "command": "project-switcher.switchToProject3",
+        "key": "ctrl+alt+3",
+        "mac": "cmd+alt+3"
+      },
+      {
+        "command": "project-switcher.switchToProject4",
+        "key": "ctrl+alt+4",
+        "mac": "cmd+alt+4"
+      },
+      {
+        "command": "project-switcher.switchToProject5",
+        "key": "ctrl+alt+5",
+        "mac": "cmd+alt+5"
+      },
+      {
+        "command": "project-switcher.switchToProject6",
+        "key": "ctrl+alt+6",
+        "mac": "cmd+alt+6"
+      },
+      {
+        "command": "project-switcher.switchToProject7",
+        "key": "ctrl+alt+7",
+        "mac": "cmd+alt+7"
+      },
+      {
+        "command": "project-switcher.switchToProject8",
+        "key": "ctrl+alt+8",
+        "mac": "cmd+alt+8"
+      },
+      {
+        "command": "project-switcher.switchToProject9",
+        "key": "ctrl+alt+9",
+        "mac": "cmd+alt+9"
+      },
+      {
+        "command": "project-switcher.addProject",
+        "key": "ctrl+alt+shift+a",
+        "mac": "cmd+alt+shift+a"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "project-switcher",
+          "title": "Project Switcher",
+          "icon": "$(folder-library)"
+        }
+      ]
+    },
+    "views": {
+      "project-switcher": [
+        {
+          "id": "projectManager",
+          "name": "Projects",
+          "contextualTitle": "Project Manager"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "project-switcher.addProject",
+          "when": "view == projectManager",
+          "group": "navigation@1"
+        },
+        {
+          "command": "project-switcher.refreshProjects",
+          "when": "view == projectManager", 
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "project-switcher.switchProject",
+          "when": "view == projectManager && viewItem == project",
+          "group": "navigation@1"
+        },
+        {
+          "command": "project-switcher.editProject",
+          "when": "view == projectManager && viewItem == project",
+          "group": "navigation@2"
+        },
+        {
+          "command": "project-switcher.toggleSessionManagement",
+          "when": "view == projectManager && viewItem == project",
+          "group": "session@1"
+        },
+        {
+          "command": "project-switcher.saveSession",
+          "when": "view == projectManager && viewItem == project",
+          "group": "session@2"
+        },
+        {
+          "command": "project-switcher.clearSession",
+          "when": "view == projectManager && viewItem == project",
+          "group": "session@3"
+        },
+        {
+          "command": "project-switcher.moveUp",
+          "when": "view == projectManager && viewItem == project",
+          "group": "order@1"
+        },
+        {
+          "command": "project-switcher.moveDown",
+          "when": "view == projectManager && viewItem == project", 
+          "group": "order@2"
+        },
+        {
+          "command": "project-switcher.removeProject",
+          "when": "view == projectManager && viewItem == project",
+          "group": "destructive@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Project Switcher",
+      "properties": {
+        "projectSwitcher.preserveTabs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Preserve open tabs when switching projects"
+        },
+        "projectSwitcher.autoSaveTabs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically save tab state when switching"
+        },
+        "projectSwitcher.sessionManagementDefault": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable session management by default for new projects"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "webpack",
+    "watch": "webpack --watch", 
+    "package": "webpack --mode production --devtool hidden-source-map",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "npm run compile-tests && npm run compile && npm run lint",
+    "lint": "eslint src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.50.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "20.x",
+    "@typescript-eslint/eslint-plugin": "^8.28.0",
+    "@typescript-eslint/parser": "^8.28.0",
+    "eslint": "^9.23.0",
+    "typescript": "^5.8.2",
+    "ts-loader": "^9.5.2",
+    "webpack": "^5.98.0",
+    "webpack-cli": "^6.0.1",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1"
+  }
+}
