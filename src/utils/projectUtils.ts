@@ -165,7 +165,7 @@ export function createProject(
     return project;
 }
 
-// NEW: Switch project using workspace folder manipulation instead of opening new window
+// Switch project using workspace folder manipulation instead of opening new window
 export async function switchToProject(projectId: string): Promise<boolean> {
     const project = getProjectById(projectId);
     if (!project) {
@@ -265,7 +265,7 @@ function getSessionManager() {
     return state.sessionManager;
 }
 
-// Add method to manually enable Project Switcher
+// Enhanced method to manually enable Project Switcher with folder selection
 export async function enableProjectSwitcherManually(context: vscode.ExtensionContext): Promise<boolean> {
     const workspaceMode = await detectWorkspaceMode();
 
@@ -274,11 +274,81 @@ export async function enableProjectSwitcherManually(context: vscode.ExtensionCon
         return false;
     }
 
-    await enableProjectSwitcher(context);
+    const workspaceRoot = vscode.workspace.workspaceFolders![0].uri.fsPath;
+    const subdirs = await getSubdirectories(workspaceRoot);
+
+    if (subdirs.length === 0) {
+        vscode.window.showWarningMessage('No subdirectories found to create projects from');
+        return false;
+    }
+
+    // Show confirmation dialog with folder selection
+    const selectedFolders = await showFolderSelectionDialog(subdirs);
+    if (!selectedFolders || selectedFolders.length === 0) {
+        return false;
+    }
+
+    // Enable with selected folders
+    await enableProjectSwitcherWithSelectedFolders(context, selectedFolders);
     state.isProjectSwitcherEnabled = true;
 
-    vscode.window.showInformationMessage('Project Switcher enabled successfully!');
+    vscode.window.showInformationMessage(`Project Switcher enabled with ${selectedFolders.length} projects!`);
     return true;
+}
+
+async function showFolderSelectionDialog(subdirs: { name: string, path: string }[]): Promise<{ name: string, path: string }[] | undefined> {
+    // Create quick pick items with checkboxes
+    const items = subdirs.map(subdir => ({
+        label: `$(folder) ${subdir.name}`,
+        description: subdir.path,
+        picked: true, // Default to all selected
+        subdir
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+        canPickMany: true,
+        placeHolder: `Select folders to use as projects (${subdirs.length} folders found)`,
+        title: 'Project Switcher - Select Folders',
+        ignoreFocusOut: true
+    });
+
+    if (!selected) {
+        return undefined;
+    }
+
+    if (selected.length === 0) {
+        vscode.window.showWarningMessage('No folders selected. Project Switcher not enabled.');
+        return undefined;
+    }
+
+    if (selected.length > 9) {
+        vscode.window.showWarningMessage('Maximum of 9 projects allowed. Only the first 9 will be used.');
+        return selected.slice(0, 9).map(item => item.subdir);
+    }
+
+    return selected.map(item => item.subdir);
+}
+
+async function enableProjectSwitcherWithSelectedFolders(context: vscode.ExtensionContext, selectedFolders: { name: string, path: string }[]) {
+    context.globalState.update('projectSwitcherEnabled', true);
+
+    Logger.info(`Enabling Project Switcher for ${selectedFolders.length} selected folders`);
+
+    // Clear existing projects first
+    state.projects.length = 0;
+
+    // Create projects for selected folders
+    for (let i = 0; i < selectedFolders.length; i++) {
+        const folder = selectedFolders[i];
+
+        const project = createProject(folder.name, folder.path, `Project in ${folder.name}`);
+        project.order = i + 1;
+
+        Logger.debug(`Created project: ${folder.name} with order ${i + 1}`);
+    }
+
+    saveProjects(context);
+    Logger.info(`Created ${selectedFolders.length} projects from selected folders`);
 }
 
 export function getProjectById(id: string): ProjectConfig | undefined {

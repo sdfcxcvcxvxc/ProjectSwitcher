@@ -25,7 +25,6 @@ export function registerProjectCommands(
 ) {
     const commands = [
         // Core project management
-        vscode.commands.registerCommand('project-switcher.addProject', () => addCurrentProject(context, treeDataProvider)),
         vscode.commands.registerCommand('project-switcher.removeProject', (item: ProjectTreeItem) => removeProject(item, context, treeDataProvider, sessionManager)),
         vscode.commands.registerCommand('project-switcher.editProject', (item: ProjectTreeItem) => editProject(item, context, treeDataProvider)),
         vscode.commands.registerCommand('project-switcher.switchProject', (item: ProjectTreeItem) => switchProject(item, context, treeDataProvider, sessionManager)),
@@ -40,7 +39,6 @@ export function registerProjectCommands(
         vscode.commands.registerCommand('project-switcher.moveDown', (item: ProjectTreeItem) => moveProjectDown(item, context, treeDataProvider)),
 
         // UI commands
-        vscode.commands.registerCommand('project-switcher.refreshProjects', () => refreshProjects(treeDataProvider)),
         vscode.commands.registerCommand('project-switcher.showProjectMenu', () => showProjectMenu(context, treeDataProvider, sessionManager)),
         vscode.commands.registerCommand('project-switcher.toggleMode', () => toggleProjectSwitcherMode(context, treeDataProvider)),
 
@@ -73,7 +71,7 @@ async function toggleProjectSwitcherMode(context: vscode.ExtensionContext, treeD
                 vscode.window.showInformationMessage('Project Switcher disabled');
             }
         } else {
-            // Currently disabled - ask to enable
+            // Currently disabled - ask to enable with folder selection
             const success = await enableProjectSwitcherManually(context);
             if (success) {
                 treeDataProvider.refresh();
@@ -83,63 +81,6 @@ async function toggleProjectSwitcherMode(context: vscode.ExtensionContext, treeD
     } catch (error: any) {
         Logger.error('Failed to toggle Project Switcher mode', error);
         vscode.window.showErrorMessage(`Failed to toggle mode: ${error.message}`);
-    }
-}
-
-async function addCurrentProject(context: vscode.ExtensionContext, treeDataProvider: ProjectTreeDataProvider) {
-    try {
-        // Check if we have space for more projects
-        const availableOrder = getNextAvailableOrder();
-        if (!availableOrder) {
-            vscode.window.showErrorMessage('Maximum of 9 projects allowed');
-            return;
-        }
-
-        // Check if there's a current workspace
-        if (!vscode.workspace.workspaceFolders || !vscode.workspace.workspaceFolders.length) {
-            vscode.window.showErrorMessage('No workspace folder is currently open');
-            return;
-        }
-
-        const currentWorkspacePath = vscode.workspace.workspaceFolders[0].uri.fsPath;
-        const projectName = path.basename(currentWorkspacePath);
-
-        // Validate path
-        const isValidPath = await validateProjectPath(currentWorkspacePath);
-        if (!isValidPath) {
-            vscode.window.showErrorMessage('Invalid project path');
-            return;
-        }
-
-        // Check for duplicates
-        const existingProject = state.projects.find(p =>
-            path.resolve(p.path) === path.resolve(currentWorkspacePath)
-        );
-
-        if (existingProject) {
-            vscode.window.showErrorMessage(`Project already exists: ${existingProject.name}`);
-            return;
-        }
-
-        // Create project automatically with current workspace info
-        const project = createProject(projectName, currentWorkspacePath);
-
-        // Enable session management by default for new projects
-        project.sessionEnabled = true;
-
-        saveProjects(context);
-
-        treeDataProvider.refresh();
-        updateStatusBar();
-
-        vscode.window.showInformationMessage(
-            `Project "${projectName}" added automatically with shortcut Ctrl+Alt+${project.order}`
-        );
-        Logger.info(`Auto-added current workspace as project: ${projectName} at ${currentWorkspacePath} with order ${project.order}`);
-
-    } catch (error: any) {
-        Logger.error('Failed to add current project', error);
-        vscode.window.showErrorMessage(`Failed to add project: ${error.message}`);
     }
 }
 
@@ -341,7 +282,6 @@ async function switchToProjectByOrder(
     await performProjectSwitch(project, context, treeDataProvider, sessionManager);
 }
 
-
 async function performProjectSwitch(
     project: ProjectConfig,
     context: vscode.ExtensionContext,
@@ -472,19 +412,12 @@ async function moveProjectDown(
     }
 }
 
-function refreshProjects(treeDataProvider: ProjectTreeDataProvider) {
-    treeDataProvider.refresh();
-    updateStatusBar();
-    Logger.debug('Refreshed project tree view');
-}
-
 async function showProjectMenu(
     context: vscode.ExtensionContext,
     treeDataProvider: ProjectTreeDataProvider,
     sessionManager: SessionManager
 ) {
     const items = [
-        'Add Current Workspace',
         'Switch Project',
         'Manage Projects',
         'Clear All Sessions'
@@ -499,10 +432,6 @@ async function showProjectMenu(
     });
 
     switch (selection) {
-        case 'Add Current Workspace':
-            await addCurrentProject(context, treeDataProvider);
-            break;
-
         case 'Switch Project':
             await showProjectSwitchMenu(context, treeDataProvider, sessionManager);
             break;
@@ -538,7 +467,7 @@ async function showProjectSwitchMenu(
     sessionManager: SessionManager
 ) {
     if (state.projects.length === 0) {
-        vscode.window.showInformationMessage('No projects configured. Add current workspace first.');
+        vscode.window.showInformationMessage('No projects configured. Enable Project Switcher first.');
         return;
     }
 

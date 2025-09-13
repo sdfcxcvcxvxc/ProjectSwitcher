@@ -30,11 +30,6 @@
   "contributes": {
     "commands": [
       {
-        "command": "project-switcher.addProject",
-        "title": "Add Current Workspace",
-        "icon": "$(add)"
-      },
-      {
         "command": "project-switcher.removeProject",
         "title": "Remove Project",
         "icon": "$(remove)"
@@ -74,11 +69,6 @@
         "icon": "$(arrow-down)"
       },
       {
-        "command": "project-switcher.refreshProjects",
-        "title": "Refresh Projects",
-        "icon": "$(refresh)"
-      },
-      {
         "command": "project-switcher.showProjectMenu",
         "title": "Project Menu",
         "icon": "$(ellipsis)"
@@ -96,7 +86,7 @@
       {
         "command": "project-switcher.toggleMode",
         "title": "Toggle Project Switcher",
-        "icon": "$(settings-gear)"
+        "icon": "$(toggle-right)"
       }
     ],
     "keybindings": [
@@ -144,11 +134,6 @@
         "command": "project-switcher.switchToProject9",
         "key": "ctrl+alt+9",
         "mac": "cmd+alt+9"
-      },
-      {
-        "command": "project-switcher.addProject",
-        "key": "ctrl+alt+shift+a",
-        "mac": "cmd+alt+shift+a"
       }
     ],
     "viewsContainers": {
@@ -172,19 +157,9 @@
     "menus": {
       "view/title": [
         {
-          "command": "project-switcher.addProject",
-          "when": "view == projectManager",
-          "group": "navigation@1"
-        },
-        {
-          "command": "project-switcher.refreshProjects",
-          "when": "view == projectManager", 
-          "group": "navigation@2"
-        },
-        {
           "command": "project-switcher.toggleMode",
           "when": "view == projectManager",
-          "group": "navigation@3"
+          "group": "navigation@1"
         }
       ],
       "view/item/context": [
