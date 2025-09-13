@@ -1,4 +1,4 @@
-// src/extension.ts - Updated with WorkspaceFilter integration
+// src/extension.ts - Enhanced with proper initialization and filtering restore
 import * as vscode from 'vscode';
 import { state, WorkspaceMode } from './models/models';
 import { initializeProjectSwitcher, loadProjects } from './utils/projectUtils';
@@ -33,6 +33,9 @@ export async function activate(context: vscode.ExtensionContext) {
     if (isEnabled) {
         // Store original workspace configuration
         await workspaceFilter.storeOriginalConfiguration();
+
+        // Restore filtering state if it was previously enabled
+        await workspaceFilter.restoreFilteringState();
 
         Logger.info('Project Switcher enabled for parent directory workspace');
 

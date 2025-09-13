@@ -1,4 +1,4 @@
-// src/utils/workspaceFilter.ts - Fixed version
+// src/utils/workspaceFilter.ts - Fixed version with proper filtering
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -8,7 +8,8 @@ export class WorkspaceFilter {
     private static readonly FILTERED_FILES_KEY = 'files.exclude';
     private originalExcludes: any = {};
     private isFiltering = false;
-    private selectedProjectPaths: string[] = []; // Track which folders are selected as projects
+    private selectedProjectPaths: string[] = [];
+    private currentActiveProject: string | undefined;
 
     constructor(private context: vscode.ExtensionContext) {
         this.loadOriginalExcludes();
@@ -30,6 +31,18 @@ export class WorkspaceFilter {
         if (storedPaths) {
             this.selectedProjectPaths = storedPaths;
         }
+
+        // Load current filtering state
+        const storedFilterState = this.context.workspaceState.get<boolean>('isCurrentlyFiltering');
+        if (storedFilterState !== undefined) {
+            this.isFiltering = storedFilterState;
+        }
+
+        // Load active project
+        const storedActiveProject = this.context.workspaceState.get<string>('currentActiveProject');
+        if (storedActiveProject) {
+            this.currentActiveProject = storedActiveProject;
+        }
     }
 
     // Store which folders were selected as projects
@@ -43,6 +56,7 @@ export class WorkspaceFilter {
         if (!vscode.workspace.workspaceFolders?.length) return;
 
         const workspaceRoot = vscode.workspace.workspaceFolders[0].uri.fsPath;
+        this.currentActiveProject = activeProjectPath;
 
         try {
             // Get all subdirectories in workspace
@@ -56,14 +70,29 @@ export class WorkspaceFilter {
                 )
                 .map(entry => entry.name);
 
-            // Create exclude pattern
-            const activeProjectName = path.basename(activeProjectPath);
+            // Create exclude pattern - start with original excludes
             const excludePatterns: any = { ...this.originalExcludes };
 
-            // Hide ALL directories except the active project
+            // Get active project name
+            const activeProjectName = path.basename(activeProjectPath);
+
+            // Only hide directories that are NOT the active project
+            // AND were not selected as projects (if user only selected 2 out of 3 folders)
             for (const dirName of allSubdirectories) {
                 if (dirName !== activeProjectName) {
-                    excludePatterns[dirName] = true;
+                    // Check if this directory was selected as a project
+                    const dirPath = path.join(workspaceRoot, dirName);
+                    const wasSelectedAsProject = this.selectedProjectPaths.some(
+                        projectPath => path.basename(projectPath) === dirName
+                    );
+
+                    // If it wasn't selected as project, hide it when filtering is enabled
+                    if (!wasSelectedAsProject) {
+                        excludePatterns[dirName] = true;
+                    } else {
+                        // If it was selected as project but not active, hide it too
+                        excludePatterns[dirName] = true;
+                    }
                 }
             }
 
@@ -72,7 +101,13 @@ export class WorkspaceFilter {
             await config.update(WorkspaceFilter.FILTERED_FILES_KEY, excludePatterns, vscode.ConfigurationTarget.Workspace);
 
             this.isFiltering = true;
+            await this.context.workspaceState.update('isCurrentlyFiltering', true);
+            await this.context.workspaceState.update('currentActiveProject', activeProjectPath);
+
             Logger.info(`Applied project filtering, showing only: ${activeProjectName}`);
+
+            // Close tabs that don't belong to current project
+            await this.closeTabsOutsideProject(activeProjectPath);
 
         } catch (error) {
             Logger.error('Failed to enable project filtering', error);
@@ -88,11 +123,56 @@ export class WorkspaceFilter {
             await config.update(WorkspaceFilter.FILTERED_FILES_KEY, this.originalExcludes, vscode.ConfigurationTarget.Workspace);
 
             this.isFiltering = false;
+            this.currentActiveProject = undefined;
+            await this.context.workspaceState.update('isCurrentlyFiltering', false);
+            await this.context.workspaceState.update('currentActiveProject', undefined);
+
             Logger.info('Disabled project filtering, restored all folders');
 
         } catch (error) {
             Logger.error('Failed to disable project filtering', error);
             throw error;
+        }
+    }
+
+    private async closeTabsOutsideProject(activeProjectPath: string): Promise<void> {
+        try {
+            // Wait a bit for any pending tab operations to complete
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            const tabGroups = vscode.window.tabGroups.all;
+            const tabsToClose: vscode.Tab[] = [];
+
+            for (const tabGroup of tabGroups) {
+                for (const tab of tabGroup.tabs) {
+                    if (tab.input instanceof vscode.TabInputText) {
+                        const tabPath = tab.input.uri.fsPath;
+
+                        // If tab is not within the active project directory, mark for closing
+                        if (!tabPath.startsWith(activeProjectPath)) {
+                            // Also verify it's within workspace
+                            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                            if (workspaceRoot && tabPath.startsWith(workspaceRoot)) {
+                                tabsToClose.push(tab);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Close tabs in smaller batches to avoid issues
+            if (tabsToClose.length > 0) {
+                const batchSize = 5;
+                for (let i = 0; i < tabsToClose.length; i += batchSize) {
+                    const batch = tabsToClose.slice(i, i + batchSize);
+                    await vscode.window.tabGroups.close(batch);
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+                Logger.debug(`Closed ${tabsToClose.length} tabs outside active project`);
+            }
+
+        } catch (error) {
+            Logger.warn('Failed to close tabs outside project', error);
         }
     }
 
@@ -129,8 +209,11 @@ export class WorkspaceFilter {
             await config.update(WorkspaceFilter.FILTERED_FILES_KEY, stored, vscode.ConfigurationTarget.Workspace);
             await this.context.workspaceState.update('originalFileExcludes', undefined);
             await this.context.workspaceState.update('selectedProjectPaths', undefined);
+            await this.context.workspaceState.update('isCurrentlyFiltering', undefined);
+            await this.context.workspaceState.update('currentActiveProject', undefined);
             this.isFiltering = false;
             this.selectedProjectPaths = [];
+            this.currentActiveProject = undefined;
             Logger.info('Restored original file excludes configuration');
         }
     }
@@ -139,7 +222,14 @@ export class WorkspaceFilter {
     getFilteringStatus(): { isFiltering: boolean; activeProject?: string } {
         return {
             isFiltering: this.isFiltering,
-            activeProject: this.isFiltering ? 'Current project only' : undefined
+            activeProject: this.currentActiveProject ? path.basename(this.currentActiveProject) : undefined
         };
+    }
+
+    // Method to restore filtering state on extension restart
+    async restoreFilteringState(): Promise<void> {
+        if (this.isFiltering && this.currentActiveProject) {
+            await this.enableProjectFiltering(this.currentActiveProject);
+        }
     }
 }

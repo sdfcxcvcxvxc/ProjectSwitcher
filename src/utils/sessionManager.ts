@@ -1,4 +1,4 @@
-// src/utils/sessionManager.ts - Updated version
+// src/utils/sessionManager.ts - Enhanced version with tab filtering
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectSession, TabInfo } from '../models/models';
@@ -49,7 +49,8 @@ export class SessionManager {
         }
 
         try {
-            const tabs = await this.getCurrentTabs();
+            // Only save tabs that belong to the current project
+            const tabs = await this.getCurrentProjectTabs();
             const explorerState = await this.getExplorerState();
 
             const session: ProjectSession = {
@@ -69,8 +70,81 @@ export class SessionManager {
         }
     }
 
+    // Enhanced method to get only tabs belonging to current project
+    private async getCurrentProjectTabs(): Promise<TabInfo[]> {
+        const tabs: TabInfo[] = [];
+
+        if (!state.currentProjectId) return tabs;
+
+        const project = getProjectById(state.currentProjectId);
+        if (!project) return tabs;
+
+        // Get all tab groups instead of just visible editors
+        const tabGroups = vscode.window.tabGroups.all;
+
+        for (const tabGroup of tabGroups) {
+            for (const tab of tabGroup.tabs) {
+                // Handle different types of tab inputs
+                if (tab.input instanceof vscode.TabInputText) {
+                    const uri = tab.input.uri;
+
+                    // Skip untitled documents or those not in workspace
+                    if (uri.scheme !== 'file') {
+                        continue;
+                    }
+
+                    const filePath = uri.fsPath;
+
+                    // Only include tabs that are within the current project directory
+                    if (!filePath.startsWith(project.path)) {
+                        continue;
+                    }
+
+                    const tabInfo: TabInfo = {
+                        uri: uri.toString(),
+                        isActive: tab.isActive,
+                        isPinned: tab.isPinned,
+                        viewColumn: tabGroup.viewColumn,
+                        isDirty: tab.isDirty,
+                        selection: await this.getEditorSelection(uri)
+                    };
+
+                    tabs.push(tabInfo);
+                }
+            }
+        }
+
+        Logger.debug(`Found ${tabs.length} tabs for project: ${project.name}`);
+        return tabs;
+    }
+
+    private async getEditorSelection(uri: vscode.Uri): Promise<TabInfo['selection']> {
+        try {
+            // Find the editor for this URI
+            const editor = vscode.window.visibleTextEditors.find(e =>
+                e.document.uri.toString() === uri.toString()
+            );
+
+            if (editor) {
+                return {
+                    start: {
+                        line: editor.selection.start.line,
+                        character: editor.selection.start.character
+                    },
+                    end: {
+                        line: editor.selection.end.line,
+                        character: editor.selection.end.character
+                    }
+                };
+            }
+        } catch (error) {
+            Logger.debug('Failed to get editor selection', error);
+        }
+
+        return undefined;
+    }
+
     async restoreSession(projectId: string): Promise<boolean> {
-        // Check if session management is enabled for this project
         const project = getProjectById(projectId);
         if (!project || project.sessionEnabled === false) {
             Logger.debug(`Session management disabled for project ${projectId}, skipping restore`);
@@ -86,80 +160,41 @@ export class SessionManager {
         try {
             Logger.debug(`Restoring session for project ${projectId} with ${session.tabs.length} tabs`);
 
-            // Close all current editors first
+            // Ensure all editors are closed first
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+            await new Promise(resolve => setTimeout(resolve, 300));
 
-            // Filter tabs that belong to the current project
-            const projectTabs = await this.filterTabsForProject(session.tabs, project.path);
+            // Filter and validate tabs
+            const validTabs = await this.validateAndFilterTabs(session.tabs, project.path);
 
-            if (projectTabs.length === 0) {
-                Logger.debug(`No tabs found for project ${projectId} in current workspace`);
+            if (validTabs.length === 0) {
+                Logger.debug(`No valid tabs to restore for project ${projectId}`);
                 return false;
             }
 
-            // Restore tabs
+            // Restore tabs in correct order
             const restoredTabs: vscode.TextEditor[] = [];
             let activeEditor: vscode.TextEditor | undefined;
 
-            for (const tabInfo of projectTabs) {
-                try {
-                    const uri = vscode.Uri.parse(tabInfo.uri);
-
-                    // Check if file exists before trying to open
-                    try {
-                        await vscode.workspace.fs.stat(uri);
-                    } catch {
-                        Logger.warn(`File no longer exists, skipping: ${tabInfo.uri}`);
-                        continue;
-                    }
-
-                    // Check if file is within project directory
-                    const filePath = uri.fsPath;
-                    if (!filePath.startsWith(project.path)) {
-                        Logger.debug(`Skipping file outside project: ${tabInfo.uri}`);
-                        continue;
-                    }
-
-                    const document = await vscode.workspace.openTextDocument(uri);
-
-                    const editor = await vscode.window.showTextDocument(document, {
-                        viewColumn: tabInfo.viewColumn || vscode.ViewColumn.One,
-                        preview: false,
-                        preserveFocus: !tabInfo.isActive
-                    });
-
-                    // Restore cursor position and selection
-                    if (tabInfo.selection) {
-                        const start = new vscode.Position(
-                            Math.max(0, tabInfo.selection.start.line),
-                            Math.max(0, tabInfo.selection.start.character)
-                        );
-                        const end = new vscode.Position(
-                            Math.max(0, tabInfo.selection.end.line),
-                            Math.max(0, tabInfo.selection.end.character)
-                        );
-
-                        // Ensure positions are valid for the document
-                        const validStart = document.validatePosition(start);
-                        const validEnd = document.validatePosition(end);
-
-                        editor.selection = new vscode.Selection(validStart, validEnd);
-                        editor.revealRange(new vscode.Range(validStart, validEnd));
-                    }
-
+            // Open non-active tabs first
+            for (const tabInfo of validTabs.filter(t => !t.isActive)) {
+                const editor = await this.openTab(tabInfo);
+                if (editor) {
                     restoredTabs.push(editor);
-
-                    if (tabInfo.isActive || tabInfo.uri === session.activeTab) {
-                        activeEditor = editor;
-                    }
-
-                    Logger.debug(`Restored tab: ${tabInfo.uri}`);
-                } catch (error) {
-                    Logger.warn(`Failed to restore tab: ${tabInfo.uri}`, error);
                 }
             }
 
-            // Set active editor
+            // Open active tab last
+            const activeTab = validTabs.find(t => t.isActive) || validTabs[0];
+            if (activeTab) {
+                const editor = await this.openTab(activeTab, true);
+                if (editor) {
+                    restoredTabs.push(editor);
+                    activeEditor = editor;
+                }
+            }
+
+            // Ensure active editor gets focus
             if (activeEditor) {
                 await vscode.window.showTextDocument(activeEditor.document, {
                     viewColumn: activeEditor.viewColumn,
@@ -167,12 +202,7 @@ export class SessionManager {
                 });
             }
 
-            // Restore explorer state
-            if (session.explorerState) {
-                await this.restoreExplorerState(session.explorerState, project.path);
-            }
-
-            Logger.info(`Successfully restored session for project ${projectId}: ${restoredTabs.length}/${projectTabs.length} tabs`);
+            Logger.info(`Successfully restored session for project ${projectId}: ${restoredTabs.length}/${validTabs.length} tabs`);
             return true;
 
         } catch (error) {
@@ -181,74 +211,77 @@ export class SessionManager {
         }
     }
 
-    private async filterTabsForProject(tabs: TabInfo[], projectPath: string): Promise<TabInfo[]> {
-        const filteredTabs: TabInfo[] = [];
+    private async validateAndFilterTabs(tabs: TabInfo[], projectPath: string): Promise<TabInfo[]> {
+        const validTabs: TabInfo[] = [];
 
-        for (const tab of tabs) {
+        for (const tabInfo of tabs) {
             try {
-                const uri = vscode.Uri.parse(tab.uri);
-                const filePath = uri.fsPath;
+                const uri = vscode.Uri.parse(tabInfo.uri);
 
-                // Only include tabs that are within the project directory
-                if (filePath.startsWith(projectPath)) {
-                    filteredTabs.push(tab);
+                // Check if file exists
+                try {
+                    await vscode.workspace.fs.stat(uri);
+                } catch {
+                    Logger.debug(`File no longer exists, skipping: ${tabInfo.uri}`);
+                    continue;
                 }
+
+                // Verify file is within project directory
+                const filePath = uri.fsPath;
+                if (!filePath.startsWith(projectPath)) {
+                    Logger.debug(`Skipping file outside current project: ${tabInfo.uri}`);
+                    continue;
+                }
+
+                validTabs.push(tabInfo);
             } catch (error) {
-                Logger.warn(`Failed to parse tab URI: ${tab.uri}`, error);
+                Logger.warn(`Invalid tab info, skipping: ${tabInfo.uri}`, error);
             }
         }
 
-        return filteredTabs;
+        return validTabs;
     }
 
-    private async getCurrentTabs(): Promise<TabInfo[]> {
-        const tabs: TabInfo[] = [];
+    private async openTab(tabInfo: TabInfo, setActive: boolean = false): Promise<vscode.TextEditor | undefined> {
+        try {
+            const uri = vscode.Uri.parse(tabInfo.uri);
+            const document = await vscode.workspace.openTextDocument(uri);
 
-        // Get all visible text editors
-        const editors = vscode.window.visibleTextEditors;
-        const activeEditor = vscode.window.activeTextEditor;
+            const editor = await vscode.window.showTextDocument(document, {
+                viewColumn: tabInfo.viewColumn || vscode.ViewColumn.One,
+                preview: false,
+                preserveFocus: !setActive
+            });
 
-        for (const editor of editors) {
-            const document = editor.document;
+            // Restore cursor position and selection
+            if (tabInfo.selection) {
+                const start = new vscode.Position(
+                    Math.max(0, tabInfo.selection.start.line),
+                    Math.max(0, tabInfo.selection.start.character)
+                );
+                const end = new vscode.Position(
+                    Math.max(0, tabInfo.selection.end.line),
+                    Math.max(0, tabInfo.selection.end.character)
+                );
 
-            // Skip untitled documents or those not in workspace
-            if (document.isUntitled || document.uri.scheme !== 'file') {
-                continue;
+                const validStart = document.validatePosition(start);
+                const validEnd = document.validatePosition(end);
+
+                editor.selection = new vscode.Selection(validStart, validEnd);
+                editor.revealRange(new vscode.Range(validStart, validEnd));
             }
 
-            // Only include tabs that are within the current workspace
-            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-            if (workspacePath && !document.uri.fsPath.startsWith(workspacePath)) {
-                continue;
-            }
+            Logger.debug(`Opened tab: ${tabInfo.uri}`);
+            return editor;
 
-            const tabInfo: TabInfo = {
-                uri: document.uri.toString(),
-                isActive: editor === activeEditor,
-                isPinned: false, // VS Code API doesn't provide pinned state easily
-                viewColumn: editor.viewColumn || vscode.ViewColumn.One,
-                isDirty: document.isDirty,
-                selection: {
-                    start: {
-                        line: editor.selection.start.line,
-                        character: editor.selection.start.character
-                    },
-                    end: {
-                        line: editor.selection.end.line,
-                        character: editor.selection.end.character
-                    }
-                }
-            };
-
-            tabs.push(tabInfo);
+        } catch (error) {
+            Logger.warn(`Failed to open tab: ${tabInfo.uri}`, error);
+            return undefined;
         }
-
-        return tabs;
     }
 
     private async getExplorerState() {
         // Basic explorer state capture
-        // VS Code doesn't provide direct API for expanded folders, so we'll keep it simple
         return {
             expandedDirectories: [], // Could be enhanced with more complex logic
             selectedFile: vscode.window.activeTextEditor?.document.uri.toString()
@@ -344,7 +377,16 @@ export class SessionManager {
         const session = state.sessions.get(projectId);
         if (!session) return 0;
 
-        const projectTabs = await this.filterTabsForProject(session.tabs, project.path);
+        // Filter tabs to only those within the project
+        const projectTabs = session.tabs.filter(tab => {
+            try {
+                const uri = vscode.Uri.parse(tab.uri);
+                return uri.fsPath.startsWith(project.path);
+            } catch {
+                return false;
+            }
+        });
+
         return projectTabs.length;
     }
 }

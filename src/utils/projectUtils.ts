@@ -1,4 +1,4 @@
-// src/utils/projectUtils.ts - Updated with WorkspaceFilter integration
+// src/utils/projectUtils.ts - Enhanced with proper filtering integration
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -148,10 +148,11 @@ async function enableProjectSwitcher(context: vscode.ExtensionContext) {
         const firstProject = state.projects[0];
         state.currentProjectId = firstProject.id;
 
-        // Auto-enable filtering to show only the first project
+        // AUTO-ENABLE filtering by default when Project Switcher is enabled
         if (state.workspaceFilter) {
             await state.workspaceFilter.enableProjectFiltering(firstProject.path);
             state.isProjectFilteringEnabled = true;
+            Logger.info(`Auto-enabled filtering for first project: ${firstProject.name}`);
         }
 
         Logger.debug(`Set current project to: ${firstProject.name} with filtering enabled`);
@@ -179,7 +180,7 @@ export function createProject(
     return project;
 }
 
-// Enhanced switch project with workspace filtering support
+// Enhanced switch project with automatic filtering
 export async function switchToProject(projectId: string): Promise<boolean> {
     const project = getProjectById(projectId);
     if (!project) {
@@ -198,55 +199,50 @@ export async function switchToProject(projectId: string): Promise<boolean> {
     try {
         Logger.info(`Switching to project: ${project.name}`);
 
-        // Save current project session first
+        // Save current project session first (BEFORE changing currentProjectId)
         if (state.currentProjectId && state.currentProjectId !== projectId) {
-            await saveCurrentProjectSession();
+            const currentProject = getProjectById(state.currentProjectId);
+            if (currentProject?.sessionEnabled !== false) {
+                await saveCurrentProjectSession();
+                Logger.debug('Saved current session before switching');
+            }
         }
 
         // Update current project
-        const oldProjectId = state.currentProjectId;
+        const previousProjectId = state.currentProjectId;
         state.currentProjectId = projectId;
         project.lastUsed = Date.now();
 
-        // Apply workspace filtering if enabled
-        if (state.workspaceFilter && state.workspaceFilter.isCurrentlyFiltering()) {
-            await state.workspaceFilter.updateProjectFilter(project.path);
+        // Enable filtering for the new project
+        if (state.workspaceFilter) {
+            await state.workspaceFilter.enableProjectFiltering(project.path);
+            state.isProjectFilteringEnabled = true;
+            Logger.debug(`Auto-enabled filtering for project: ${project.name}`);
         }
 
-        // Focus project directory in Explorer instead of opening new workspace
+        // Close all editors first
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
+        // Delay to let filtering take effect
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Focus project directory in Explorer
         await focusProjectInExplorer(project.path);
 
-        // Close all editors and restore project session
-        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-        await restoreProjectSession(projectId);
+        // Restore project session AFTER filtering and focusing
+        if (project.sessionEnabled !== false) {
+            const restored = await restoreProjectSession(projectId);
+            if (!restored) {
+                Logger.debug(`No session to restore for project: ${project.name}`);
+            }
+        }
 
-        // Update file explorer context
-        await updateExplorerContext(project.path);
-
-        Logger.info(`Successfully switched to project: ${project.name}`);
+        Logger.info(`Successfully switched to project: ${project.name} with filtering enabled`);
         return true;
 
     } catch (error) {
         Logger.error(`Failed to switch to project: ${project.name}`, error);
         return false;
-    }
-}
-
-async function updateExplorerContext(projectPath: string) {
-    try {
-        // Set the project folder as "root" context for file operations
-        // This doesn't change workspace but influences file explorer behavior
-        const uri = vscode.Uri.file(projectPath);
-
-        // Focus the folder in explorer
-        await vscode.commands.executeCommand('revealInExplorer', uri);
-
-        // Optionally expand the folder
-        await vscode.commands.executeCommand('list.expand', uri);
-
-        Logger.debug(`Updated explorer context to: ${projectPath}`);
-    } catch (error) {
-        Logger.warn('Failed to update explorer context', error);
     }
 }
 
@@ -259,11 +255,12 @@ async function saveCurrentProjectSession() {
     }
 }
 
-async function restoreProjectSession(projectId: string) {
+async function restoreProjectSession(projectId: string): Promise<boolean> {
     const sessionManager = getSessionManager();
     if (sessionManager) {
-        await sessionManager.restoreSession(projectId);
+        return await sessionManager.restoreSession(projectId);
     }
+    return false;
 }
 
 async function focusProjectInExplorer(projectPath: string) {
@@ -375,7 +372,7 @@ async function enableProjectSwitcherWithSelectedFolders(context: vscode.Extensio
 
     saveProjects(context);
 
-    // Set first project as current and enable filtering by default
+    // Set first project as current and AUTO-ENABLE filtering by default
     if (state.projects.length > 0) {
         const firstProject = state.projects[0];
         state.currentProjectId = firstProject.id;
@@ -444,7 +441,7 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
     );
 
     if (confirm === 'Disable') {
-        // Restore original workspace configuration
+        // Restore original workspace configuration (disable filtering)
         if (state.workspaceFilter) {
             await state.workspaceFilter.restoreOriginalConfiguration();
         }
