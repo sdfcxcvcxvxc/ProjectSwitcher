@@ -429,3 +429,14 @@ This extension is built with vanilla TypeScript and VS Code APIs, with no extern
 **Made with ❤️ by KhanhRomVN**
 
 _Boost your productivity with seamless project switching in VS Code!_
+
+hoàn cảnh: folder đang có 2 folder con là "A" và "B"
+
+- lỗi 1: khi chuyển từ enable sang disable thì chỉ hiển thị mỗi "A"
+- yêu cầu 1: xóa "Switch to Project" ở project option vì thừa. thay vào đó click thẳng vào project là switch được rồi
+- yêu cầu 2: xóa icon "Pencil" Edit Project và chức năng rename project
+- yêu cầu 3: xóa icon Trash và tiinhs năng xóa project
+  \_ yêu cầu 4: thêm bạt tắt project sẽ ko xóa project ra khjoir nhưng sẽ bị mờ đi và ẩn đi các option Up, Down.
+- yêu cầu 5: xóaoption Togggle Session Mângerment
+- lỗi 2: ở sidebar tôi đã enable nhưng ở statusbar thì vẫn có thông báo "Enale Project Switcher"
+- đơn giản lại filter project để tránh lôi. đơn giản là project nào đang focus thì folder (projetc) đó hiển thị.)

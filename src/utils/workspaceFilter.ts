@@ -1,4 +1,4 @@
-// src/utils/workspaceFilter.ts - Fixed version with proper filtering
+// src/utils/workspaceFilter.ts - Fixed disable handling to show all folders
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -76,23 +76,10 @@ export class WorkspaceFilter {
             // Get active project name
             const activeProjectName = path.basename(activeProjectPath);
 
-            // Only hide directories that are NOT the active project
-            // AND were not selected as projects (if user only selected 2 out of 3 folders)
+            // Hide all directories except the active project
             for (const dirName of allSubdirectories) {
                 if (dirName !== activeProjectName) {
-                    // Check if this directory was selected as a project
-                    const dirPath = path.join(workspaceRoot, dirName);
-                    const wasSelectedAsProject = this.selectedProjectPaths.some(
-                        projectPath => path.basename(projectPath) === dirName
-                    );
-
-                    // If it wasn't selected as project, hide it when filtering is enabled
-                    if (!wasSelectedAsProject) {
-                        excludePatterns[dirName] = true;
-                    } else {
-                        // If it was selected as project but not active, hide it too
-                        excludePatterns[dirName] = true;
-                    }
+                    excludePatterns[dirName] = true;
                 }
             }
 
@@ -106,9 +93,6 @@ export class WorkspaceFilter {
 
             Logger.info(`Applied project filtering, showing only: ${activeProjectName}`);
 
-            // Close tabs that don't belong to current project
-            await this.closeTabsOutsideProject(activeProjectPath);
-
         } catch (error) {
             Logger.error('Failed to enable project filtering', error);
             throw error;
@@ -116,10 +100,9 @@ export class WorkspaceFilter {
     }
 
     async disableProjectFiltering(): Promise<void> {
-        if (!this.isFiltering) return;
-
         try {
             const config = vscode.workspace.getConfiguration();
+            // FIXED: Always restore to original excludes to show ALL folders
             await config.update(WorkspaceFilter.FILTERED_FILES_KEY, this.originalExcludes, vscode.ConfigurationTarget.Workspace);
 
             this.isFiltering = false;
@@ -127,7 +110,10 @@ export class WorkspaceFilter {
             await this.context.workspaceState.update('isCurrentlyFiltering', false);
             await this.context.workspaceState.update('currentActiveProject', undefined);
 
-            Logger.info('Disabled project filtering, restored all folders');
+            Logger.info('Disabled project filtering, restored ALL folders');
+
+            // Force refresh explorer to show all folders
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
 
         } catch (error) {
             Logger.error('Failed to disable project filtering', error);
@@ -135,59 +121,17 @@ export class WorkspaceFilter {
         }
     }
 
-    private async closeTabsOutsideProject(activeProjectPath: string): Promise<void> {
-        try {
-            // Wait a bit for any pending tab operations to complete
-            await new Promise(resolve => setTimeout(resolve, 100));
-
-            const tabGroups = vscode.window.tabGroups.all;
-            const tabsToClose: vscode.Tab[] = [];
-
-            for (const tabGroup of tabGroups) {
-                for (const tab of tabGroup.tabs) {
-                    if (tab.input instanceof vscode.TabInputText) {
-                        const tabPath = tab.input.uri.fsPath;
-
-                        // If tab is not within the active project directory, mark for closing
-                        if (!tabPath.startsWith(activeProjectPath)) {
-                            // Also verify it's within workspace
-                            const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-                            if (workspaceRoot && tabPath.startsWith(workspaceRoot)) {
-                                tabsToClose.push(tab);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Close tabs in smaller batches to avoid issues
-            if (tabsToClose.length > 0) {
-                const batchSize = 5;
-                for (let i = 0; i < tabsToClose.length; i += batchSize) {
-                    const batch = tabsToClose.slice(i, i + batchSize);
-                    await vscode.window.tabGroups.close(batch);
-                    await new Promise(resolve => setTimeout(resolve, 50));
-                }
-                Logger.debug(`Closed ${tabsToClose.length} tabs outside active project`);
-            }
-
-        } catch (error) {
-            Logger.warn('Failed to close tabs outside project', error);
-        }
-    }
-
     isCurrentlyFiltering(): boolean {
         return this.isFiltering;
     }
 
-    // Method to update filtering when switching projects
     async updateProjectFilter(newActiveProjectPath: string): Promise<void> {
         if (this.isFiltering) {
             await this.enableProjectFiltering(newActiveProjectPath);
         }
     }
 
-    // Store original excludes when Project Switcher is first enabled
+    // Store original configuration properly
     async storeOriginalConfiguration(): Promise<void> {
         const stored = this.context.workspaceState.get<any>('originalFileExcludes');
         if (!stored) {
@@ -201,24 +145,35 @@ export class WorkspaceFilter {
         }
     }
 
-    // Restore original configuration when Project Switcher is disabled
+    // FIXED: Properly restore original configuration and show ALL folders
     async restoreOriginalConfiguration(): Promise<void> {
-        const stored = this.context.workspaceState.get<any>('originalFileExcludes');
-        if (stored) {
+        try {
             const config = vscode.workspace.getConfiguration();
-            await config.update(WorkspaceFilter.FILTERED_FILES_KEY, stored, vscode.ConfigurationTarget.Workspace);
+
+            // CRITICAL FIX: Always restore to the original excludes to show ALL folders
+            await config.update(WorkspaceFilter.FILTERED_FILES_KEY, this.originalExcludes, vscode.ConfigurationTarget.Workspace);
+
+            // Clear workspace state
             await this.context.workspaceState.update('originalFileExcludes', undefined);
             await this.context.workspaceState.update('selectedProjectPaths', undefined);
             await this.context.workspaceState.update('isCurrentlyFiltering', undefined);
             await this.context.workspaceState.update('currentActiveProject', undefined);
+
+            // Reset instance variables
             this.isFiltering = false;
             this.selectedProjectPaths = [];
             this.currentActiveProject = undefined;
-            Logger.info('Restored original file excludes configuration');
+
+            // Force refresh explorer to ensure all folders show
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+
+            Logger.info('Restored original file excludes - ALL folders should now be visible');
+
+        } catch (error) {
+            Logger.error('Failed to restore original configuration', error);
         }
     }
 
-    // Get status info for UI display
     getFilteringStatus(): { isFiltering: boolean; activeProject?: string } {
         return {
             isFiltering: this.isFiltering,
@@ -226,7 +181,6 @@ export class WorkspaceFilter {
         };
     }
 
-    // Method to restore filtering state on extension restart
     async restoreFilteringState(): Promise<void> {
         if (this.isFiltering && this.currentActiveProject) {
             await this.enableProjectFiltering(this.currentActiveProject);

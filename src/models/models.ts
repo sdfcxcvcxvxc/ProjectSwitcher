@@ -1,4 +1,4 @@
-// src/models/models.ts - Updated with enhanced tree item support
+// src/models/models.ts - Added enabled field for project disable feature
 import * as vscode from 'vscode';
 import { WorkspaceFilter } from '../utils/workspaceFilter';
 
@@ -11,6 +11,7 @@ export interface ProjectConfig {
     description?: string;
     lastUsed: number;
     sessionEnabled?: boolean;
+    enabled?: boolean; // NEW: For requirement 4 - enable/disable projects
 }
 
 export interface TabInfo {
@@ -48,11 +49,11 @@ export const state = {
     currentProjectId: undefined as string | undefined,
     workspaceMode: WorkspaceMode.None,
     isProjectSwitcherEnabled: false,
-    isProjectFilteringEnabled: false, // Field for filtering state
+    isProjectFilteringEnabled: false,
     isInitialized: false,
     statusBarItem: undefined as vscode.StatusBarItem | undefined,
     sessionManager: undefined as any,
-    workspaceFilter: undefined as WorkspaceFilter | undefined, // Field for workspace filter
+    workspaceFilter: undefined as WorkspaceFilter | undefined,
 };
 
 export interface ProjectTreeItem extends vscode.TreeItem {

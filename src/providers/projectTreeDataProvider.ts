@@ -1,4 +1,4 @@
-// src/providers/projectTreeDataProvider.ts - Updated to show helpful messages
+// src/providers/projectTreeDataProvider.ts - Simplified UI with enable/disable toggle
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectConfig, ProjectTreeItem, WorkspaceMode } from '../models/models';
@@ -17,55 +17,76 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
 
     getChildren(element?: ProjectTreeItem): Thenable<ProjectTreeItem[]> {
         if (!element) {
-            // Root level - check if Project Switcher is enabled
-            if (!state.isProjectSwitcherEnabled) {
-                return this.getDisabledModeItems();
+            const items: ProjectTreeItem[] = [];
+
+            // Always show Enable/Disable toggle at the top
+            const toggleItem = this.createToggleItem();
+            items.push(toggleItem);
+
+            // If Project Switcher is enabled, show all projects
+            if (state.isProjectSwitcherEnabled) {
+                const sortedProjects = [...state.projects].sort((a, b) => a.order - b.order);
+                items.push(...sortedProjects.map(project => this.createProjectTreeItem(project)));
+
+                if (sortedProjects.length === 0) {
+                    const noProjectsItem = new vscode.TreeItem('No projects configured') as ProjectTreeItem;
+                    noProjectsItem.description = 'Projects will appear here';
+                    noProjectsItem.projectId = '';
+                    noProjectsItem.project = {} as ProjectConfig;
+                    items.push(noProjectsItem);
+                }
+            } else {
+                // Show helpful info when disabled
+                items.push(...this.getDisabledModeItems());
             }
 
-            // Project Switcher is enabled - show all projects sorted by order
-            const sortedProjects = [...state.projects].sort((a, b) => a.order - b.order);
-
-            if (sortedProjects.length === 0) {
-                const item = new vscode.TreeItem('No projects configured') as ProjectTreeItem;
-                item.description = 'Enable Project Switcher first';
-                item.projectId = '';
-                item.project = {} as ProjectConfig;
-                return Promise.resolve([item]);
-            }
-
-            return Promise.resolve(sortedProjects.map(project => this.createProjectTreeItem(project)));
+            return Promise.resolve(items);
         }
 
         return Promise.resolve([]);
     }
 
-    private getDisabledModeItems(): Promise<ProjectTreeItem[]> {
+    private createToggleItem(): ProjectTreeItem {
+        const isEnabled = state.isProjectSwitcherEnabled;
+        const item = new vscode.TreeItem(
+            isEnabled ? 'Disable Project Switcher' : 'Enable Project Switcher'
+        ) as ProjectTreeItem;
+
+        item.iconPath = new vscode.ThemeIcon(
+            isEnabled ? 'stop-circle' : 'play-circle',
+            new vscode.ThemeColor(isEnabled ? 'terminal.ansiRed' : 'terminal.ansiGreen')
+        );
+
+        item.description = isEnabled ? 'Show all folders' : 'Organize project folders';
+        item.tooltip = isEnabled ?
+            'Click to disable Project Switcher and show all folders' :
+            'Click to enable Project Switcher and organize project folders';
+
+        item.command = {
+            command: 'project-switcher.toggleMode',
+            title: isEnabled ? 'Disable Project Switcher' : 'Enable Project Switcher'
+        };
+
+        item.projectId = '';
+        item.project = {} as ProjectConfig;
+        item.contextValue = 'toggleItem';
+
+        return item;
+    }
+
+    private getDisabledModeItems(): ProjectTreeItem[] {
         const items: ProjectTreeItem[] = [];
 
         if (state.workspaceMode === WorkspaceMode.ParentDirectory) {
-            // Parent directory detected - show enable option
-            const enableItem = new vscode.TreeItem('Enable Project Switcher') as ProjectTreeItem;
-            enableItem.description = 'Manage subdirectories as separate projects';
-            enableItem.iconPath = new vscode.ThemeIcon('folder-library', new vscode.ThemeColor('terminal.ansiGreen'));
-            enableItem.tooltip = 'Click to enable Project Switcher for this workspace';
-            enableItem.command = {
-                command: 'project-switcher.toggleMode',
-                title: 'Enable Project Switcher'
-            };
-            enableItem.projectId = '';
-            enableItem.project = {} as ProjectConfig;
-            items.push(enableItem);
-
-            // Show workspace info
             const infoItem = new vscode.TreeItem('Multi-folder workspace detected') as ProjectTreeItem;
-            infoItem.description = 'Click above to organize';
-            infoItem.iconPath = new vscode.ThemeIcon('info');
+            infoItem.description = 'Click "Enable" above to organize';
+            infoItem.iconPath = new vscode.ThemeIcon('info', new vscode.ThemeColor('terminal.ansiBlue'));
+            infoItem.tooltip = 'This workspace contains multiple folders. Enable Project Switcher to manage them as separate projects.';
             infoItem.projectId = '';
             infoItem.project = {} as ProjectConfig;
             items.push(infoItem);
 
         } else if (state.workspaceMode === WorkspaceMode.SingleProject) {
-            // Single project workspace
             const infoItem = new vscode.TreeItem('Single project workspace') as ProjectTreeItem;
             infoItem.description = 'Project Switcher not needed';
             infoItem.iconPath = new vscode.ThemeIcon('folder', new vscode.ThemeColor('terminal.ansiBlue'));
@@ -75,7 +96,6 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
             items.push(infoItem);
 
         } else {
-            // No workspace
             const noWorkspaceItem = new vscode.TreeItem('No workspace open') as ProjectTreeItem;
             noWorkspaceItem.description = 'Open a folder first';
             noWorkspaceItem.iconPath = new vscode.ThemeIcon('folder-opened', new vscode.ThemeColor('terminal.ansiYellow'));
@@ -84,13 +104,16 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
             items.push(noWorkspaceItem);
         }
 
-        return Promise.resolve(items);
+        return items;
     }
 
     private createProjectTreeItem(project: ProjectConfig): ProjectTreeItem {
         const isCurrentProject = project.id === state.currentProjectId;
-        const sessionEnabled = project.sessionEnabled !== false; // Default to enabled
+        const sessionEnabled = project.sessionEnabled !== false;
         const hasSession = state.sessions.has(project.id);
+
+        // REQUIREMENT 4: Check if project should be disabled/dimmed
+        const isProjectEnabled = project.enabled !== false; // Default to true
 
         const projectName = `[${project.order}] ${project.name}`;
 
@@ -101,30 +124,29 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
 
         item.projectId = project.id;
         item.project = project;
-        item.contextValue = 'project';
+
+        // REQUIREMENT 4: Set different context value for disabled projects
+        item.contextValue = isProjectEnabled ? 'project' : 'disabledProject';
 
         // Show current project with different styling
-        if (isCurrentProject) {
+        if (isCurrentProject && isProjectEnabled) {
             item.iconPath = new vscode.ThemeIcon('circle-filled', new vscode.ThemeColor('terminal.ansiGreen'));
             let description = '(active)';
 
-            // Add session status to active project
             if (sessionEnabled) {
                 description += hasSession ? ' • session saved' : ' • session enabled';
             } else {
                 description += ' • session disabled';
             }
 
-            // Add filtering status to active project
             if (state.workspaceFilter?.isCurrentlyFiltering()) {
                 description += ' • filtered';
             }
 
             item.description = description;
-        } else {
+        } else if (isProjectEnabled) {
             item.iconPath = new vscode.ThemeIcon('circle-outline');
 
-            // Show session status for non-active projects
             let description = '';
             if (sessionEnabled && hasSession) {
                 description = '• session saved';
@@ -132,9 +154,16 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
                 description = '• session disabled';
             }
             item.description = description;
+        } else {
+            // REQUIREMENT 4: Disabled project styling - dimmed appearance
+            item.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('disabledForeground'));
+            item.description = '• disabled';
+
+            // Make the label appear dimmed
+            item.resourceUri = vscode.Uri.parse(`disabled:${project.name}`);
         }
 
-        // Enhanced tooltip with session information
+        // Enhanced tooltip
         const projectPath = project.path;
         const lastUsedDate = new Date(project.lastUsed).toLocaleString();
 
@@ -154,7 +183,6 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
             }
         }
 
-        // Add filtering status to tooltip
         if (isCurrentProject && state.workspaceFilter) {
             const filterStatus = state.workspaceFilter.isCurrentlyFiltering() ?
                 'Active (showing only this project)' :
@@ -164,14 +192,20 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
 
         tooltip += `\nShortcut: Ctrl+Alt+${project.order}`;
 
+        if (!isProjectEnabled) {
+            tooltip += `\nStatus: Disabled`;
+        }
+
         item.tooltip = tooltip;
 
-        // Add command to switch project on click
-        item.command = {
-            command: 'project-switcher.switchProject',
-            title: 'Switch to Project',
-            arguments: [item]
-        };
+        // REQUIREMENT 1: Direct click to switch project (only for enabled projects)
+        if (isProjectEnabled) {
+            item.command = {
+                command: 'project-switcher.switchProject',
+                title: 'Switch to Project',
+                arguments: [item]
+            };
+        }
 
         return item;
     }

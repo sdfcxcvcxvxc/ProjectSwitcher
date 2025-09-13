@@ -1,19 +1,17 @@
-// src/commands/projectCommands.ts - Enhanced with Ctrl+Alt+M menu and simplified UI
+// src/commands/projectCommands.ts - Simplified commands based on requirements
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectTreeItem, ProjectConfig } from '../models/models';
 import {
-    createProject,
     updateProject,
-    deleteProject,
     moveProject,
     saveProjects,
     getProjectById,
     getProjectByOrder,
     validateProjectPath,
-    getNextAvailableOrder,
     enableProjectSwitcherManually,
-    disableProjectSwitcher
+    disableProjectSwitcher,
+    switchToProject
 } from '../utils/projectUtils';
 import { ProjectTreeDataProvider } from '../providers/projectTreeDataProvider';
 import { SessionManager } from '../utils/sessionManager';
@@ -27,31 +25,33 @@ export function registerProjectCommands(
     Logger.info('=== Registering project commands ===');
 
     const commands = [
-        // Core project management
-        vscode.commands.registerCommand('project-switcher.removeProject', (item: ProjectTreeItem) => removeProject(item, context, treeDataProvider, sessionManager)),
-        vscode.commands.registerCommand('project-switcher.editProject', (item: ProjectTreeItem) => editProject(item, context, treeDataProvider)),
+        // Core project management - REMOVED: removeProject, editProject, toggleSessionManagement (Requirements 2, 3, 5)
         vscode.commands.registerCommand('project-switcher.switchProject', (item: ProjectTreeItem) => switchProject(item, context, treeDataProvider, sessionManager)),
 
-        // Session management
-        vscode.commands.registerCommand('project-switcher.toggleSessionManagement', (item: ProjectTreeItem) => toggleSessionManagement(item, context, treeDataProvider)),
+        // NEW: Toggle project enabled/disabled (Requirement 4)
+        vscode.commands.registerCommand('project-switcher.toggleProjectEnabled', (item: ProjectTreeItem) => toggleProjectEnabled(item, context, treeDataProvider)),
+
+        // Session management - REMOVED: toggleSessionManagement (Requirement 5)
         vscode.commands.registerCommand('project-switcher.saveSession', (item: ProjectTreeItem) => saveProjectSession(item, sessionManager)),
         vscode.commands.registerCommand('project-switcher.clearSession', (item: ProjectTreeItem) => clearProjectSession(item, sessionManager, treeDataProvider)),
 
-        // Project ordering
+        // Project ordering (only for enabled projects)
         vscode.commands.registerCommand('project-switcher.moveUp', (item: ProjectTreeItem) => moveProjectUp(item, context, treeDataProvider)),
         vscode.commands.registerCommand('project-switcher.moveDown', (item: ProjectTreeItem) => moveProjectDown(item, context, treeDataProvider)),
 
         // UI commands
         vscode.commands.registerCommand('project-switcher.showProjectMenu', () => showProjectMenu(context, treeDataProvider, sessionManager)),
+
+        // Toggle mode command - FIXED: Updated to handle statusbar display
         vscode.commands.registerCommand('project-switcher.toggleMode', () => toggleProjectSwitcherMode(context, treeDataProvider)),
 
         // Enhanced filtering command
         vscode.commands.registerCommand('project-switcher.toggleFiltering', () => toggleProjectFiltering(context, treeDataProvider)),
 
-        // NEW: Ctrl+Alt+M command for project switch menu (only works when enabled)
+        // Ctrl+Alt+M command for project switch menu (only works when enabled)
         vscode.commands.registerCommand('project-switcher.openProjectSwitchMenu', () => openProjectSwitchMenu(context, treeDataProvider, sessionManager)),
 
-        // Keyboard shortcut commands (1-9)
+        // Keyboard shortcut commands (1-9) - only for enabled projects
         ...Array.from({ length: 9 }, (_, i) => {
             const order = i + 1;
             return vscode.commands.registerCommand(`project-switcher.switchToProject${order}`, () =>
@@ -68,7 +68,36 @@ export function registerProjectCommands(
     Logger.info('All project commands registered successfully');
 }
 
-// NEW: Project switch menu accessible only when Project Switcher is enabled
+// NEW: Requirement 4 - Toggle project enabled/disabled
+async function toggleProjectEnabled(
+    item: ProjectTreeItem,
+    context: vscode.ExtensionContext,
+    treeDataProvider: ProjectTreeDataProvider
+) {
+    if (!item.projectId) return;
+
+    const project = getProjectById(item.projectId);
+    if (!project) return;
+
+    const currentState = project.enabled ?? true; // Default to enabled
+    const newState = !currentState;
+
+    try {
+        updateProject(project.id, { enabled: newState });
+        saveProjects(context);
+        treeDataProvider.refresh();
+
+        const statusMsg = newState ? 'enabled' : 'disabled';
+        vscode.window.showInformationMessage(`Project "${project.name}" ${statusMsg}`);
+        Logger.info(`Project ${statusMsg}: ${project.name}`);
+
+    } catch (error: any) {
+        Logger.error('Failed to toggle project enabled state', error);
+        vscode.window.showErrorMessage(`Failed to toggle project state: ${error.message}`);
+    }
+}
+
+// Project switch menu accessible only when Project Switcher is enabled
 async function openProjectSwitchMenu(
     context: vscode.ExtensionContext,
     treeDataProvider: ProjectTreeDataProvider,
@@ -84,12 +113,16 @@ async function openProjectSwitchMenu(
         return;
     }
 
+    // Only show enabled projects, excluding current project
     const availableProjects = [...state.projects]
-        .filter(project => project.id !== state.currentProjectId) // Exclude current project
+        .filter(project =>
+            project.id !== state.currentProjectId &&
+            project.enabled !== false // Only enabled projects
+        )
         .sort((a, b) => a.order - b.order);
 
     if (availableProjects.length === 0) {
-        vscode.window.showInformationMessage('No other projects available to switch to.');
+        vscode.window.showInformationMessage('No other enabled projects available to switch to.');
         return;
     }
 
@@ -138,14 +171,14 @@ async function toggleProjectFiltering(context: vscode.ExtensionContext, treeData
             // Enable filtering - show only active project
             if (state.currentProjectId) {
                 const project = getProjectById(state.currentProjectId);
-                if (project) {
+                if (project && project.enabled !== false) {
                     await state.workspaceFilter.enableProjectFiltering(project.path);
                     state.isProjectFilteringEnabled = true;
                     updateStatusBar();
                     vscode.window.showInformationMessage(`Project filtering enabled - showing only: ${project.name}`);
                     Logger.info(`Project filtering enabled for: ${project.name}`);
                 } else {
-                    vscode.window.showWarningMessage('Current project not found. Please select a project first.');
+                    vscode.window.showWarningMessage('Current project not found or disabled. Please select an enabled project first.');
                 }
             } else {
                 vscode.window.showWarningMessage('No active project to filter by. Switch to a project first.');
@@ -157,30 +190,39 @@ async function toggleProjectFiltering(context: vscode.ExtensionContext, treeData
     }
 }
 
+// FIXED: Toggle mode now properly updates statusbar (Fix for Error 2)
 async function toggleProjectSwitcherMode(context: vscode.ExtensionContext, treeDataProvider: ProjectTreeDataProvider) {
     try {
         if (state.isProjectSwitcherEnabled) {
             // Currently enabled - ask to disable
-            const confirm = await vscode.window.showWarningMessage(
-                'Disable Project Switcher? This will restore all folders and clear project configurations.',
-                { modal: true },
-                'Disable',
-                'Cancel'
-            );
+            await disableProjectSwitcher(context);
+            state.isProjectSwitcherEnabled = false;
 
-            if (confirm === 'Disable') {
-                await disableProjectSwitcher(context);
-                treeDataProvider.refresh();
-                updateStatusBar();
-                vscode.window.showInformationMessage('Project Switcher disabled - all folders restored');
+            // Update contexts after disabling
+            await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', false);
+            await vscode.commands.executeCommand('setContext', 'projectSwitcher.hasMultipleProjects', false);
+
+            // FIXED: Hide statusbar item when disabled
+            if (state.statusBarItem) {
+                state.statusBarItem.hide();
             }
+
+            treeDataProvider.refresh();
         } else {
-            // Currently disabled - ask to enable with folder selection
+            // Currently disabled - enable with ALL folders
             const success = await enableProjectSwitcherManually(context);
             if (success) {
-                treeDataProvider.refresh();
+                state.isProjectSwitcherEnabled = true;
+
+                // Update contexts after enabling
+                await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', true);
+                await vscode.commands.executeCommand('setContext', 'projectSwitcher.hasMultipleProjects',
+                    state.projects.length > 1);
+
+                // FIXED: Show and update statusbar item when enabled
                 updateStatusBar();
-                vscode.window.showInformationMessage('Project Switcher enabled with filtering active');
+
+                treeDataProvider.refresh();
             }
         }
     } catch (error: any) {
@@ -189,39 +231,14 @@ async function toggleProjectSwitcherMode(context: vscode.ExtensionContext, treeD
     }
 }
 
-async function toggleSessionManagement(
-    item: ProjectTreeItem,
-    context: vscode.ExtensionContext,
-    treeDataProvider: ProjectTreeDataProvider
-) {
-    if (!item.projectId) return;
-
-    const project = getProjectById(item.projectId);
-    if (!project) return;
-
-    const currentState = project.sessionEnabled ?? true;
-    const newState = !currentState;
-
-    try {
-        updateProject(project.id, { sessionEnabled: newState });
-        saveProjects(context);
-        treeDataProvider.refresh();
-
-        const statusMsg = newState ? 'enabled' : 'disabled';
-        vscode.window.showInformationMessage(`Session management ${statusMsg} for project "${project.name}"`);
-        Logger.info(`Session management ${statusMsg} for project: ${project.name}`);
-
-    } catch (error: any) {
-        Logger.error('Failed to toggle session management', error);
-        vscode.window.showErrorMessage(`Failed to toggle session management: ${error.message}`);
-    }
-}
-
 async function saveProjectSession(item: ProjectTreeItem, sessionManager: SessionManager) {
     if (!item.projectId) return;
 
     const project = getProjectById(item.projectId);
-    if (!project) return;
+    if (!project || project.enabled === false) {
+        vscode.window.showWarningMessage(`Project "${project?.name || 'Unknown'}" is disabled`);
+        return;
+    }
 
     if (!project.sessionEnabled) {
         vscode.window.showWarningMessage(`Session management is disabled for project "${project.name}"`);
@@ -277,87 +294,6 @@ async function clearProjectSession(
     }
 }
 
-async function removeProject(
-    item: ProjectTreeItem,
-    context: vscode.ExtensionContext,
-    treeDataProvider: ProjectTreeDataProvider,
-    sessionManager: SessionManager
-) {
-    if (!item.projectId) return;
-
-    const project = getProjectById(item.projectId);
-    if (!project) return;
-
-    const confirm = await vscode.window.showQuickPick(
-        ['Cancel', `Delete "${project.name}"`],
-        { placeHolder: `Are you sure you want to delete project "${project.name}"?` }
-    );
-
-    if (confirm !== `Delete "${project.name}"`) return;
-
-    try {
-        // Clear session for this project
-        sessionManager.clearSession(project.id);
-
-        // Delete project
-        deleteProject(project.id);
-        saveProjects(context);
-
-        treeDataProvider.refresh();
-        updateStatusBar();
-
-        vscode.window.showInformationMessage(`Project "${project.name}" deleted`);
-        Logger.info(`Deleted project: ${project.name}`);
-
-    } catch (error: any) {
-        Logger.error('Failed to delete project', error);
-        vscode.window.showErrorMessage(`Failed to delete project: ${error.message}`);
-    }
-}
-
-async function editProject(
-    item: ProjectTreeItem,
-    context: vscode.ExtensionContext,
-    treeDataProvider: ProjectTreeDataProvider
-) {
-    if (!item.projectId) return;
-
-    const project = getProjectById(item.projectId);
-    if (!project) return;
-
-    // Edit name
-    const newName = await vscode.window.showInputBox({
-        prompt: 'Enter new project name',
-        value: project.name
-    });
-
-    if (!newName) return;
-
-    // Edit description
-    const newDescription = await vscode.window.showInputBox({
-        prompt: 'Enter project description (optional)',
-        value: project.description || ''
-    });
-
-    try {
-        updateProject(project.id, {
-            name: newName,
-            description: newDescription || undefined
-        });
-
-        saveProjects(context);
-        treeDataProvider.refresh();
-        updateStatusBar();
-
-        vscode.window.showInformationMessage(`Project updated: ${newName}`);
-        Logger.info(`Updated project: ${project.id} -> ${newName}`);
-
-    } catch (error: any) {
-        Logger.error('Failed to edit project', error);
-        vscode.window.showErrorMessage(`Failed to edit project: ${error.message}`);
-    }
-}
-
 async function switchProject(
     item: ProjectTreeItem,
     context: vscode.ExtensionContext,
@@ -367,7 +303,10 @@ async function switchProject(
     if (!item.projectId) return;
 
     const project = getProjectById(item.projectId);
-    if (!project) return;
+    if (!project || project.enabled === false) {
+        vscode.window.showWarningMessage(`Project "${project?.name || 'Unknown'}" is disabled`);
+        return;
+    }
 
     await performProjectSwitch(project, context, treeDataProvider, sessionManager);
 }
@@ -381,6 +320,11 @@ async function switchToProjectByOrder(
     const project = getProjectByOrder(order);
     if (!project) {
         vscode.window.showWarningMessage(`No project assigned to shortcut ${order}`);
+        return;
+    }
+
+    if (project.enabled === false) {
+        vscode.window.showWarningMessage(`Project "${project.name}" is disabled`);
         return;
     }
 
@@ -438,14 +382,14 @@ async function performProjectSwitch(
         state.currentProjectId = project.id;
         project.lastUsed = Date.now();
 
-        // ALWAYS enable filtering when switching projects (key fix)
+        // SIMPLIFIED: Always enable filtering when switching projects
         if (state.workspaceFilter && state.isProjectSwitcherEnabled) {
             await state.workspaceFilter.enableProjectFiltering(project.path);
             state.isProjectFilteringEnabled = true;
             Logger.debug(`Auto-enabled filtering for project: ${project.name}`);
         }
 
-        // Close all editors first (filtering will handle closing tabs from other projects)
+        // Close all editors first
         await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 
         // Delay to ensure filtering takes effect
@@ -454,7 +398,6 @@ async function performProjectSwitch(
         // Focus project directory in explorer
         const projectUri = vscode.Uri.file(project.path);
         await vscode.commands.executeCommand('revealInExplorer', projectUri);
-        await vscode.commands.executeCommand('list.expand', projectUri);
         await vscode.commands.executeCommand('workbench.files.action.focusFilesExplorer');
 
         // Another small delay before restoring session
@@ -477,7 +420,7 @@ async function performProjectSwitch(
                 ' (no saved session)') :
             ' (session disabled)';
 
-        vscode.window.showInformationMessage(`Switched to: ${project.name}${sessionInfo} • filtering active`);
+        vscode.window.showInformationMessage(`Switched to: ${project.name}${sessionInfo}`);
         Logger.info(`Successfully switched to project: ${project.name} with filtering enabled`);
 
     } catch (error: any) {
@@ -498,6 +441,12 @@ async function moveProjectUp(
 ) {
     if (!item.projectId) return;
 
+    const project = getProjectById(item.projectId);
+    if (!project || project.enabled === false) {
+        vscode.window.showWarningMessage('Cannot move disabled project');
+        return;
+    }
+
     const success = moveProject(item.projectId, 'up');
     if (success) {
         saveProjects(context);
@@ -513,6 +462,12 @@ async function moveProjectDown(
 ) {
     if (!item.projectId) return;
 
+    const project = getProjectById(item.projectId);
+    if (!project || project.enabled === false) {
+        vscode.window.showWarningMessage('Cannot move disabled project');
+        return;
+    }
+
     const success = moveProject(item.projectId, 'down');
     if (success) {
         saveProjects(context);
@@ -521,7 +476,7 @@ async function moveProjectDown(
     }
 }
 
-// Simplified project menu (removed duplicated functionality since we have Ctrl+Alt+M now)
+// Simplified project menu
 async function showProjectMenu(
     context: vscode.ExtensionContext,
     treeDataProvider: ProjectTreeDataProvider,

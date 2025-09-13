@@ -46,23 +46,13 @@
   "contributes": {
     "commands": [
       {
-        "command": "project-switcher.removeProject",
-        "title": "Remove Project",
-        "icon": "$(remove)"
-      },
-      {
         "command": "project-switcher.switchProject",
         "title": "Switch to Project"
       },
       {
-        "command": "project-switcher.editProject",
-        "title": "Edit Project",
-        "icon": "$(edit)"
-      },
-      {
-        "command": "project-switcher.toggleSessionManagement",
-        "title": "Toggle Session Management",
-        "icon": "$(record)"
+        "command": "project-switcher.toggleProjectEnabled",
+        "title": "Toggle Project Enabled/Disabled",
+        "icon": "$(circle-slash)"
       },
       {
         "command": "project-switcher.saveSession",
@@ -213,85 +203,50 @@
         {
           "id": "allProjects",
           "name": "ALL PROJECTS",
-          "when": "projectSwitcher.isEnabled"
+          "when": "projectSwitcher.isEnabled && projectSwitcher.hasMultipleProjects"
         }
       ]
     },
     "menus": {
-      "view/title": [
-        {
-          "command": "project-switcher.toggleMode",
-          "when": "view == projectManager",
-          "group": "navigation@1"
-        },
-        {
-          "command": "project-switcher.toggleFiltering",
-          "when": "view == projectManager",
-          "group": "navigation@2"
-        }
-      ],
       "view/item/context": [
         {
-          "command": "project-switcher.switchProject",
+          "command": "project-switcher.toggleProjectEnabled",
           "when": "view == projectManager && viewItem == project",
-          "group": "navigation@1"
+          "group": "inline@1"
+        },
+        {
+          "command": "project-switcher.moveUp",
+          "when": "view == projectManager && viewItem == project",
+          "group": "inline@2"
+        },
+        {
+          "command": "project-switcher.moveDown",
+          "when": "view == projectManager && viewItem == project", 
+          "group": "inline@3"
+        },
+        {
+          "command": "project-switcher.saveSession",
+          "when": "view == projectManager && viewItem == project",
+          "group": "inline@4"
+        },
+        {
+          "command": "project-switcher.clearSession",
+          "when": "view == projectManager && viewItem == project",
+          "group": "inline@5"
         },
         {
           "command": "project-switcher.switchProject",
           "when": "view == allProjects && viewItem == allProject",
           "group": "navigation@1"
-        },
-        {
-          "command": "project-switcher.editProject",
-          "when": "view == projectManager && viewItem == project",
-          "group": "navigation@2"
-        },
-        {
-          "command": "project-switcher.toggleSessionManagement",
-          "when": "view == projectManager && viewItem == project",
-          "group": "session@1"
-        },
-        {
-          "command": "project-switcher.saveSession",
-          "when": "view == projectManager && viewItem == project",
-          "group": "session@2"
-        },
-        {
-          "command": "project-switcher.clearSession",
-          "when": "view == projectManager && viewItem == project",
-          "group": "session@3"
-        },
-        {
-          "command": "project-switcher.moveUp",
-          "when": "view == projectManager && viewItem == project",
-          "group": "order@1"
-        },
-        {
-          "command": "project-switcher.moveDown",
-          "when": "view == projectManager && viewItem == project", 
-          "group": "order@2"
-        },
-        {
-          "command": "project-switcher.removeProject",
-          "when": "view == projectManager && viewItem == project",
-          "group": "destructive@1"
         }
       ],
       "commandPalette": [
-        {
-          "command": "project-switcher.removeProject",
-          "when": "false"
-        },
         {
           "command": "project-switcher.switchProject",
           "when": "false"
         },
         {
-          "command": "project-switcher.editProject",
-          "when": "false"
-        },
-        {
-          "command": "project-switcher.toggleSessionManagement",
+          "command": "project-switcher.toggleProjectEnabled",
           "when": "false"
         },
         {
@@ -386,11 +341,6 @@
   },
   "extensionDependencies": [],
   "badges": [
-    {
-      "url": "https://img.shields.io/github/license/KhanhRomVN/ProjectSwitcher",
-      "href": "https://github.com/KhanhRomVN/ProjectSwitcher/blob/main/LICENSE",
-      "description": "License"
-    },
     {
       "url": "https://img.shields.io/github/issues/KhanhRomVN/ProjectSwitcher",
       "href": "https://github.com/KhanhRomVN/ProjectSwitcher/issues",

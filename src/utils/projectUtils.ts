@@ -1,9 +1,10 @@
-// src/utils/projectUtils.ts - Fixed disable function to keep activity bar visible
+// src/utils/projectUtils.ts - Restored project switching functionality
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { state, ProjectConfig, WorkspaceMode } from '../models/models';
 import { Logger } from './logger';
+import { updateStatusBar } from './statusBarUtils';
 
 export function loadProjects(context: vscode.ExtensionContext) {
     const stored = context.globalState.get<ProjectConfig[]>('projects');
@@ -127,13 +128,14 @@ async function enableProjectSwitcher(context: vscode.ExtensionContext) {
     // Clear existing projects first
     state.projects.length = 0;
 
-    // Auto-create projects for subdirectories (up to 9)
+    // Auto-create projects for ALL subdirectories (up to 9)
     const selectedPaths: string[] = [];
     for (let i = 0; i < Math.min(subdirs.length, 9); i++) {
         const subdir = subdirs[i];
 
         const project = createProject(subdir.name, subdir.path, `Project in ${subdir.name}`);
         project.order = i + 1;
+        project.enabled = true; // Ensure all projects start as enabled
         selectedPaths.push(subdir.path);
 
         Logger.debug(`Created project: ${subdir.name} with order ${i + 1}`);
@@ -174,7 +176,8 @@ export function createProject(
         order: 0, // Will be set later
         description,
         lastUsed: Date.now(),
-        sessionEnabled: true
+        sessionEnabled: true,
+        enabled: true // Default to enabled
     };
 
     state.projects.push(project);
@@ -183,11 +186,17 @@ export function createProject(
     return project;
 }
 
-// Enhanced switch project with automatic filtering
+// FIXED: Restored project switching functionality
 export async function switchToProject(projectId: string): Promise<boolean> {
     const project = getProjectById(projectId);
     if (!project) {
         Logger.error(`Project not found: ${projectId}`);
+        return false;
+    }
+
+    // Check if project is enabled
+    if (project.enabled === false) {
+        vscode.window.showWarningMessage(`Project "${project.name}" is disabled`);
         return false;
     }
 
@@ -240,7 +249,17 @@ export async function switchToProject(projectId: string): Promise<boolean> {
             }
         }
 
+        // Update statusbar
+        updateStatusBar();
+
+        // Refresh tree views
+        vscode.commands.executeCommand('project-switcher.refreshAllTrees');
+
         Logger.info(`Successfully switched to project: ${project.name} with filtering enabled`);
+
+        // Show success message
+        vscode.window.showInformationMessage(`Switched to: ${project.name}`);
+
         return true;
 
     } catch (error) {
@@ -284,7 +303,6 @@ function getSessionManager() {
     return state.sessionManager;
 }
 
-// Enhanced method to manually enable Project Switcher with folder selection
 export async function enableProjectSwitcherManually(context: vscode.ExtensionContext): Promise<boolean> {
     const workspaceMode = await detectWorkspaceMode();
 
@@ -301,68 +319,31 @@ export async function enableProjectSwitcherManually(context: vscode.ExtensionCon
         return false;
     }
 
-    // Show confirmation dialog with folder selection
-    const selectedFolders = await showFolderSelectionDialog(subdirs);
-    if (!selectedFolders || selectedFolders.length === 0) {
-        return false;
-    }
-
-    // Enable with selected folders
-    await enableProjectSwitcherWithSelectedFolders(context, selectedFolders);
+    await enableProjectSwitcherWithAllFolders(context, subdirs);
     state.isProjectSwitcherEnabled = true;
 
-    vscode.window.showInformationMessage(`Project Switcher enabled with ${selectedFolders.length} projects!`);
+    vscode.window.showInformationMessage(`Project Switcher enabled with ${subdirs.length} projects!`);
     return true;
 }
 
-async function showFolderSelectionDialog(subdirs: { name: string, path: string }[]): Promise<{ name: string, path: string }[] | undefined> {
-    // Create quick pick items with checkboxes
-    const items = subdirs.map(subdir => ({
-        label: `$(folder) ${subdir.name}`,
-        description: subdir.path,
-        picked: true, // Default to all selected
-        subdir
-    }));
-
-    const selected = await vscode.window.showQuickPick(items, {
-        canPickMany: true,
-        placeHolder: `Select folders to use as projects (${subdirs.length} folders found)`,
-        title: 'Project Switcher - Select Folders',
-        ignoreFocusOut: true
-    });
-
-    if (!selected) {
-        return undefined;
-    }
-
-    if (selected.length === 0) {
-        vscode.window.showWarningMessage('No folders selected. Project Switcher not enabled.');
-        return undefined;
-    }
-
-    if (selected.length > 9) {
-        vscode.window.showWarningMessage('Maximum of 9 projects allowed. Only the first 9 will be used.');
-        return selected.slice(0, 9).map(item => item.subdir);
-    }
-
-    return selected.map(item => item.subdir);
-}
-
-async function enableProjectSwitcherWithSelectedFolders(context: vscode.ExtensionContext, selectedFolders: { name: string, path: string }[]) {
+async function enableProjectSwitcherWithAllFolders(context: vscode.ExtensionContext, allFolders: { name: string, path: string }[]) {
     context.globalState.update('projectSwitcherEnabled', true);
 
-    Logger.info(`Enabling Project Switcher for ${selectedFolders.length} selected folders`);
+    Logger.info(`Enabling Project Switcher for ALL ${allFolders.length} folders`);
 
     // Clear existing projects first
     state.projects.length = 0;
 
-    // Create projects for selected folders
+    // Create projects for ALL folders (up to 9)
     const selectedPaths: string[] = [];
-    for (let i = 0; i < selectedFolders.length; i++) {
-        const folder = selectedFolders[i];
+    const foldersToUse = allFolders.slice(0, 9); // Limit to 9 for keyboard shortcuts
+
+    for (let i = 0; i < foldersToUse.length; i++) {
+        const folder = foldersToUse[i];
 
         const project = createProject(folder.name, folder.path, `Project in ${folder.name}`);
         project.order = i + 1;
+        project.enabled = true; // Ensure all projects start as enabled
         selectedPaths.push(folder.path);
 
         Logger.debug(`Created project: ${folder.name} with order ${i + 1}`);
@@ -386,7 +367,7 @@ async function enableProjectSwitcherWithSelectedFolders(context: vscode.Extensio
             state.isProjectFilteringEnabled = true;
         }
 
-        Logger.info(`Created ${selectedFolders.length} projects with filtering enabled for: ${firstProject.name}`);
+        Logger.info(`Created ${foldersToUse.length} projects with filtering enabled for: ${firstProject.name}`);
     }
 }
 
@@ -434,10 +415,9 @@ export function deleteProject(projectId: string): boolean {
     return true;
 }
 
-// FIXED: Disable function that keeps activity bar visible
 export async function disableProjectSwitcher(context: vscode.ExtensionContext): Promise<void> {
     const confirm = await vscode.window.showWarningMessage(
-        'This will disable Project Switcher and clear all project configurations. The extension will remain accessible. Continue?',
+        'This will disable Project Switcher and show all folders again. Continue?',
         { modal: true },
         'Disable',
         'Cancel'
@@ -457,11 +437,8 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
         state.isProjectFilteringEnabled = false;
         saveProjects(context);
 
-        // IMPORTANT: Don't set the context to false - keep activity bar visible
-        // The extension should remain accessible for future enabling
-
-        vscode.window.showInformationMessage('Project Switcher disabled. Extension remains available for future use.');
-        Logger.info('Project Switcher disabled by user, extension remains accessible');
+        vscode.window.showInformationMessage('Project Switcher disabled. All folders are now visible.');
+        Logger.info('Project Switcher disabled by user, all folders restored');
     }
 }
 

@@ -1,4 +1,4 @@
-// src/extension.ts - Fixed Activity Bar visibility issue
+// src/extension.ts - Fixed context management and proper statusbar handling
 import * as vscode from 'vscode';
 import { state, WorkspaceMode } from './models/models';
 import { initializeProjectSwitcher, loadProjects } from './utils/projectUtils';
@@ -8,12 +8,13 @@ import { registerAllCommands } from './commands';
 import { SessionManager } from './utils/sessionManager';
 import { WorkspaceFilter } from './utils/workspaceFilter';
 import { Logger } from './utils/logger';
+import { createStatusBarItem, updateStatusBar } from './utils/statusBarUtils';
 
 export async function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
     Logger.info('Project Switcher extension activated');
 
-    // CRITICAL FIX: Always show activity bar icon immediately, regardless of workspace mode
+    // Always show activity bar icon immediately
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', true);
     Logger.info('Set context projectSwitcher.isEnabled to true (always visible)');
 
@@ -60,15 +61,16 @@ export async function activate(context: vscode.ExtensionContext) {
     const isAutoEnabled = await initializeProjectSwitcher(context);
     state.isProjectSwitcherEnabled = isAutoEnabled;
 
+    // Set contexts for UI visibility
+    await updateContexts();
+
     Logger.info(`Workspace mode: ${state.workspaceMode}`);
     Logger.info(`Project Switcher auto-enabled: ${isAutoEnabled}`);
 
     // Handle different workspace modes
     if (isAutoEnabled) {
-        // Project Switcher is fully enabled
         await setupEnabledMode(context, workspaceFilter, sessionManager, projectTreeDataProvider, allProjectsTreeDataProvider);
     } else {
-        // Show the extension but in "ready to enable" state
         await setupReadyMode(context, projectTreeDataProvider, allProjectsTreeDataProvider, sessionManager);
     }
 
@@ -84,6 +86,14 @@ export async function activate(context: vscode.ExtensionContext) {
             Logger.debug('Could not auto-open activity bar (this is normal)', error);
         }
     }, 1000);
+}
+
+// Update VS Code contexts based on state
+async function updateContexts() {
+    await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', state.isProjectSwitcherEnabled);
+    await vscode.commands.executeCommand('setContext', 'projectSwitcher.hasMultipleProjects',
+        state.isProjectSwitcherEnabled && state.projects.length > 1);
+    Logger.debug(`Updated contexts: isEnabled=${state.isProjectSwitcherEnabled}, hasMultipleProjects=${state.isProjectSwitcherEnabled && state.projects.length > 1}`);
 }
 
 // Setup for fully enabled Project Switcher mode
@@ -102,25 +112,19 @@ async function setupEnabledMode(
 
     Logger.info('Project Switcher enabled for parent directory workspace');
 
-    // Create status bar item
-    state.statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Left,
-        100
-    );
-    state.statusBarItem.command = 'project-switcher.showProjectMenu';
-    context.subscriptions.push(state.statusBarItem);
-
-    // Update UI
+    // Create and show status bar item immediately
+    createStatusBarItem(context);
     updateStatusBar();
 
     // Setup auto-save on tab changes
     const autoSaveSubscriptions = setupAutoSave(sessionManager);
     autoSaveSubscriptions.forEach(sub => context.subscriptions.push(sub));
 
-    // Setup tree refresh listeners
-    const refreshBothTrees = () => {
+    // Setup tree refresh listeners with context updates
+    const refreshBothTrees = async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
+        await updateContexts();
     };
 
     // Refresh trees when projects change
@@ -129,7 +133,6 @@ async function setupEnabledMode(
     );
 }
 
-// FIXED: Setup for when extension is ready but not enabled
 async function setupReadyMode(
     context: vscode.ExtensionContext,
     projectTreeDataProvider: ProjectTreeDataProvider,
@@ -142,34 +145,16 @@ async function setupReadyMode(
     projectTreeDataProvider.refresh();
     allProjectsTreeDataProvider.refresh();
 
-    // Create a subtle status bar hint only for parent directory workspaces
+    // Don't create conflicting statusbar items in ready mode
     if (state.workspaceMode === WorkspaceMode.ParentDirectory) {
-        const enableHintItem = vscode.window.createStatusBarItem(
-            vscode.StatusBarAlignment.Left,
-            99
-        );
-        enableHintItem.text = '$(folder) Enable Project Switcher';
-        enableHintItem.tooltip = 'Click to enable Project Switcher for this workspace';
-        enableHintItem.command = 'project-switcher.enable';
-        enableHintItem.show();
-        context.subscriptions.push(enableHintItem);
-
-        // Register enable command
-        const enableCommand = vscode.commands.registerCommand('project-switcher.enable', async () => {
-            const enabled = await initializeProjectSwitcher(context);
-            if (enabled) {
-                enableHintItem.dispose();
-                // Switch to full mode
-                await activateFullMode(context, projectTreeDataProvider, allProjectsTreeDataProvider, sessionManager);
-            }
-        });
-        context.subscriptions.push(enableCommand);
+        Logger.debug('Parent directory detected - ready for manual enabling');
     }
 
-    // Setup tree refresh command
-    const refreshCommand = vscode.commands.registerCommand('project-switcher.refreshAllTrees', () => {
+    // Setup tree refresh command with context updates
+    const refreshCommand = vscode.commands.registerCommand('project-switcher.refreshAllTrees', async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
+        await updateContexts();
     });
     context.subscriptions.push(refreshCommand);
 }
@@ -183,25 +168,20 @@ async function activateFullMode(
     Logger.info('Activating full Project Switcher mode');
 
     state.isProjectSwitcherEnabled = true;
-    // IMPORTANT: Don't change the context here - keep activity bar visible
+    await updateContexts();
 
     // Store original workspace configuration
     if (state.workspaceFilter) {
         await state.workspaceFilter.storeOriginalConfiguration();
     }
 
-    // Create status bar item
-    state.statusBarItem = vscode.window.createStatusBarItem(
-        vscode.StatusBarAlignment.Left,
-        100
-    );
-    state.statusBarItem.command = 'project-switcher.showProjectMenu';
-    context.subscriptions.push(state.statusBarItem);
+    // Create status bar item when activating
+    createStatusBarItem(context);
+    updateStatusBar();
 
     // Update UI
     projectTreeDataProvider.refresh();
     allProjectsTreeDataProvider.refresh();
-    updateStatusBar();
 
     // Setup auto-save on tab changes
     const autoSaveSubscriptions = setupAutoSave(sessionManager);
@@ -232,46 +212,6 @@ function setupAutoSave(sessionManager: SessionManager): vscode.Disposable[] {
     return [tabChangeHandler, documentChangeHandler];
 }
 
-function updateStatusBar() {
-    if (!state.statusBarItem) return;
-
-    if (state.currentProjectId) {
-        const project = state.projects.find(p => p.id === state.currentProjectId);
-        if (project) {
-            let statusText = `$(folder) ${project.name} [${project.order}]`;
-
-            // Add filtering indicator
-            if (state.workspaceFilter?.isCurrentlyFiltering()) {
-                statusText += ' $(filter)';
-            }
-
-            state.statusBarItem.text = statusText;
-
-            let tooltip = `Current project: ${project.name}\nPath: ${project.path}\nShortcut: Ctrl+Alt+${project.order}\nSession: ${project.sessionEnabled !== false ? 'Enabled' : 'Disabled'}`;
-
-            // Add filtering status to tooltip
-            if (state.workspaceFilter) {
-                const filterStatus = state.workspaceFilter.isCurrentlyFiltering() ? 'Enabled (showing only current project)' : 'Disabled (showing all folders)';
-                tooltip += `\nFiltering: ${filterStatus}`;
-            }
-
-            tooltip += '\nClick to switch project';
-            state.statusBarItem.tooltip = tooltip;
-            state.statusBarItem.show();
-            return;
-        }
-    }
-
-    let statusText = `$(folder) No Project`;
-    if (state.workspaceFilter?.isCurrentlyFiltering()) {
-        statusText += ' $(filter)';
-    }
-
-    state.statusBarItem.text = statusText;
-    state.statusBarItem.tooltip = 'No project selected. Click to manage projects.';
-    state.statusBarItem.show();
-}
-
 export function deactivate() {
     // Restore original configuration before deactivating
     if (state.workspaceFilter) {
@@ -282,9 +222,6 @@ export function deactivate() {
     if (state.currentProjectId && state.sessionManager) {
         state.sessionManager.saveCurrentSession();
     }
-
-    // FIXED: Don't clear the context here - let VS Code handle it
-    // The activity bar should remain available
 
     // Cleanup
     state.projects.length = 0;
