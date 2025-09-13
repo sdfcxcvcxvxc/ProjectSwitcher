@@ -1,15 +1,27 @@
 {
-  "name": "project-switcher",
-  "displayName": "Project Switcher",
-  "description": "Switch between project folders while preserving tabs and sessions",
-  "version": "0.0.1",
-  "publisher": "your-publisher",
+  "name": "projects-switcher",
+  "displayName": "Projects Switcher",
+  "description": "Switch between project folders while preserving tabs and sessions with intelligent workspace filtering",
+  "version": "1.0.0",
+  "publisher": "khanhromvn",
+  "author": {
+    "name": "KhanhRomVN",
+    "email": "khanhromvn@gmail.com"
+  },
   "license": "MIT",
+  "homepage": "https://github.com/KhanhRomVN/ProjectSwitcher#readme",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/project-switcher.git"
+    "url": "https://github.com/KhanhRomVN/ProjectSwitcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/KhanhRomVN/ProjectSwitcher/issues"
   },
   "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#1e1e1e",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.50.0"
   },
@@ -22,7 +34,10 @@
     "switcher",
     "tabs",
     "session",
-    "filtering"
+    "filtering",
+    "workspace-management",
+    "folder-filtering",
+    "tab-management"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -99,52 +114,67 @@
       {
         "command": "project-switcher.switchToProject1",
         "key": "ctrl+alt+1",
-        "mac": "cmd+alt+1"
+        "mac": "cmd+alt+1",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject2", 
         "key": "ctrl+alt+2",
-        "mac": "cmd+alt+2"
+        "mac": "cmd+alt+2",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject3",
         "key": "ctrl+alt+3",
-        "mac": "cmd+alt+3"
+        "mac": "cmd+alt+3",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject4",
         "key": "ctrl+alt+4",
-        "mac": "cmd+alt+4"
+        "mac": "cmd+alt+4",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject5",
         "key": "ctrl+alt+5",
-        "mac": "cmd+alt+5"
+        "mac": "cmd+alt+5",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject6",
         "key": "ctrl+alt+6",
-        "mac": "cmd+alt+6"
+        "mac": "cmd+alt+6",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject7",
         "key": "ctrl+alt+7",
-        "mac": "cmd+alt+7"
+        "mac": "cmd+alt+7",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject8",
         "key": "ctrl+alt+8",
-        "mac": "cmd+alt+8"
+        "mac": "cmd+alt+8",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject9",
         "key": "ctrl+alt+9",
-        "mac": "cmd+alt+9"
+        "mac": "cmd+alt+9",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.toggleFiltering",
         "key": "ctrl+alt+f",
-        "mac": "cmd+alt+f"
+        "mac": "cmd+alt+f",
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
+      },
+      {
+        "command": "project-switcher.showProjectMenu",
+        "key": "ctrl+alt+p",
+        "mac": "cmd+alt+p"
       }
     ],
     "viewsContainers": {
@@ -161,7 +191,8 @@
         {
           "id": "projectManager",
           "name": "Projects",
-          "contextualTitle": "Project Manager"
+          "contextualTitle": "Project Manager",
+          "when": "projectSwitcher.isEnabled"
         }
       ]
     },
@@ -219,6 +250,40 @@
           "when": "view == projectManager && viewItem == project",
           "group": "destructive@1"
         }
+      ],
+      "commandPalette": [
+        {
+          "command": "project-switcher.removeProject",
+          "when": "false"
+        },
+        {
+          "command": "project-switcher.switchProject",
+          "when": "false"
+        },
+        {
+          "command": "project-switcher.editProject",
+          "when": "false"
+        },
+        {
+          "command": "project-switcher.toggleSessionManagement",
+          "when": "false"
+        },
+        {
+          "command": "project-switcher.saveSession",
+          "when": "false"
+        },
+        {
+          "command": "project-switcher.clearSession",
+          "when": "false"
+        },
+        {
+          "command": "project-switcher.moveUp",
+          "when": "false"
+        },
+        {
+          "command": "project-switcher.moveDown",
+          "when": "false"
+        }
       ]
     },
     "configuration": {
@@ -241,8 +306,24 @@
         },
         "projectSwitcher.enableFiltering": {
           "type": "boolean",
-          "default": false,
+          "default": true,
           "description": "Enable project filtering by default (show only active project folder)"
+        },
+        "projectSwitcher.enableKeyboardShortcuts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable keyboard shortcuts for quick project switching (Ctrl+Alt+1-9)"
+        },
+        "projectSwitcher.autoEnableOnStartup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically enable Project Switcher for parent directory workspaces"
+        },
+        "projectSwitcher.logLevel": {
+          "type": "string",
+          "enum": ["debug", "info", "warn", "error"],
+          "default": "info",
+          "description": "Set the logging level for troubleshooting"
         }
       }
     }
@@ -255,8 +336,12 @@
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
-    "lint": "eslint src",
-    "test": "vscode-test"
+    "lint": "eslint src --ext ts",
+    "lint:fix": "eslint src --ext ts --fix",
+    "test": "vscode-test",
+    "clean": "rimraf dist out",
+    "build": "npm run clean && npm run compile",
+    "build:prod": "npm run clean && npm run package"
   },
   "devDependencies": {
     "@types/vscode": "^1.50.0",
@@ -270,6 +355,26 @@
     "webpack": "^5.98.0",
     "webpack-cli": "^6.0.1",
     "@vscode/test-cli": "^0.0.10",
-    "@vscode/test-electron": "^2.4.1"
-  }
+    "@vscode/test-electron": "^2.4.1",
+    "rimraf": "^3.0.2"
+  },
+  "extensionDependencies": [],
+  "badges": [
+    {
+      "url": "https://img.shields.io/github/license/KhanhRomVN/ProjectSwitcher",
+      "href": "https://github.com/KhanhRomVN/ProjectSwitcher/blob/main/LICENSE",
+      "description": "License"
+    },
+    {
+      "url": "https://img.shields.io/github/issues/KhanhRomVN/ProjectSwitcher",
+      "href": "https://github.com/KhanhRomVN/ProjectSwitcher/issues",
+      "description": "Issues"
+    },
+    {
+      "url": "https://img.shields.io/github/stars/KhanhRomVN/ProjectSwitcher",
+      "href": "https://github.com/KhanhRomVN/ProjectSwitcher",
+      "description": "Stars"
+    }
+  ],
+  "qna": "marketplace"
 }
