@@ -319,6 +319,14 @@ export async function enableProjectSwitcherManually(context: vscode.ExtensionCon
         return false;
     }
 
+    // CRITICAL: Initialize workspace filter if not already available
+    if (!state.workspaceFilter) {
+        const WorkspaceFilter = require('./workspaceFilter').WorkspaceFilter;
+        state.workspaceFilter = new WorkspaceFilter(context);
+        Logger.debug('Initialized workspace filter for manual enable');
+    }
+
+    // Enable with all folders
     await enableProjectSwitcherWithAllFolders(context, subdirs);
     state.isProjectSwitcherEnabled = true;
 
@@ -349,9 +357,10 @@ async function enableProjectSwitcherWithAllFolders(context: vscode.ExtensionCont
         Logger.debug(`Created project: ${folder.name} with order ${i + 1}`);
     }
 
-    // Store selected project paths in workspace filter
+    // CRITICAL: Store selected project paths in workspace filter FIRST
     if (state.workspaceFilter) {
         await state.workspaceFilter.setSelectedProjects(selectedPaths);
+        Logger.debug('Stored selected project paths in workspace filter');
     }
 
     saveProjects(context);
@@ -361,13 +370,35 @@ async function enableProjectSwitcherWithAllFolders(context: vscode.ExtensionCont
         const firstProject = state.projects[0];
         state.currentProjectId = firstProject.id;
 
-        // Auto-enable filtering to show only the first project
+        // FIXED: Ensure workspace filter is properly initialized before enabling filtering
         if (state.workspaceFilter) {
+            // Store original configuration first if not already done
+            await state.workspaceFilter.storeOriginalConfiguration();
+            Logger.debug('Stored original workspace configuration');
+
+            // Now enable filtering for the first project
             await state.workspaceFilter.enableProjectFiltering(firstProject.path);
             state.isProjectFilteringEnabled = true;
+
+            Logger.info(`Auto-enabled filtering for first project: ${firstProject.name}`);
+
+            // Verify that filtering was applied
+            const filterStatus = state.workspaceFilter.getFilteringStatus();
+            Logger.debug('Filter status after enabling:', filterStatus);
+
+            // Force refresh explorer to show only the first project
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+
+            // Second refresh after delay to ensure filtering is visible
+            setTimeout(async () => {
+                await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+                Logger.debug('Secondary refresh after enabling filtering');
+            }, 500);
+        } else {
+            Logger.error('Workspace filter not available when enabling Project Switcher');
         }
 
-        Logger.info(`Created ${foldersToUse.length} projects with filtering enabled for: ${firstProject.name}`);
+        Logger.debug(`Set current project to: ${firstProject.name} with filtering enabled`);
     }
 }
 
@@ -419,26 +450,55 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
     const confirm = await vscode.window.showWarningMessage(
         'This will disable Project Switcher and show all folders again. Continue?',
         { modal: true },
-        'Disable',
-        'Cancel'
+        'Disable'
     );
 
     if (confirm === 'Disable') {
-        // Restore original workspace configuration (disable filtering)
-        if (state.workspaceFilter) {
-            await state.workspaceFilter.restoreOriginalConfiguration();
+        try {
+            // CRITICAL: Disable filtering FIRST before clearing other state
+            if (state.workspaceFilter) {
+                await state.workspaceFilter.disableProjectFiltering();
+                Logger.info('Disabled project filtering');
+            }
+
+            // THEN restore original workspace configuration
+            if (state.workspaceFilter) {
+                await state.workspaceFilter.restoreOriginalConfiguration();
+                Logger.info('Restored original workspace configuration');
+            }
+
+            // Update global state
+            context.globalState.update('projectSwitcherEnabled', false);
+
+            // Clear all project data
+            state.projects.length = 0;
+            state.currentProjectId = undefined;
+            state.sessions.clear();
+            state.isProjectSwitcherEnabled = false;
+            state.isProjectFilteringEnabled = false;
+
+            // Clear workspace filter reference
+            state.workspaceFilter = undefined;
+
+            // Save cleared projects
+            saveProjects(context);
+
+            // Force refresh file explorer to ensure all folders are visible
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+
+            // Small delay then another refresh to ensure visibility
+            setTimeout(async () => {
+                await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+                Logger.info('Secondary explorer refresh completed');
+            }, 500);
+
+            vscode.window.showInformationMessage('Project Switcher disabled. All folders are now visible.');
+            Logger.info('Project Switcher disabled by user, all folders restored');
+
+        } catch (error) {
+            Logger.error('Failed to disable Project Switcher completely', error);
+            vscode.window.showErrorMessage(`Failed to disable Project Switcher: ${error}`);
         }
-
-        context.globalState.update('projectSwitcherEnabled', false);
-        state.projects.length = 0;
-        state.currentProjectId = undefined;
-        state.sessions.clear();
-        state.isProjectSwitcherEnabled = false;
-        state.isProjectFilteringEnabled = false;
-        saveProjects(context);
-
-        vscode.window.showInformationMessage('Project Switcher disabled. All folders are now visible.');
-        Logger.info('Project Switcher disabled by user, all folders restored');
     }
 }
 
@@ -505,3 +565,4 @@ export function getNextAvailableOrder(): number | null {
 
     return null; // All slots 1-9 are taken
 }
+

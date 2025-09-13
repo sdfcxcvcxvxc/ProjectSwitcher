@@ -70,13 +70,21 @@ export class WorkspaceFilter {
                 )
                 .map(entry => entry.name);
 
-            // Create exclude pattern - start with original excludes
+            // FIXED: Start fresh with original excludes instead of accumulating
             const excludePatterns: any = { ...this.originalExcludes };
 
             // Get active project name
             const activeProjectName = path.basename(activeProjectPath);
 
-            // Hide all directories except the active project
+            // FIXED: Remove any previously excluded project folders first
+            for (const dirName of allSubdirectories) {
+                // Remove the directory from excludes if it was previously hidden
+                if (excludePatterns[dirName] === true) {
+                    delete excludePatterns[dirName];
+                }
+            }
+
+            // Now hide all directories except the active project
             for (const dirName of allSubdirectories) {
                 if (dirName !== activeProjectName) {
                     excludePatterns[dirName] = true;
@@ -102,18 +110,48 @@ export class WorkspaceFilter {
     async disableProjectFiltering(): Promise<void> {
         try {
             const config = vscode.workspace.getConfiguration();
-            // FIXED: Always restore to original excludes to show ALL folders
-            await config.update(WorkspaceFilter.FILTERED_FILES_KEY, this.originalExcludes, vscode.ConfigurationTarget.Workspace);
 
+            // Log current state before disabling
+            const currentExcludes = config.get(WorkspaceFilter.FILTERED_FILES_KEY) || {};
+            Logger.info('Current excludes before disabling filtering:', currentExcludes);
+            Logger.info('Original excludes to restore:', this.originalExcludes);
+
+            // FIXED: Always restore to original excludes to show ALL folders
+            await config.update(
+                WorkspaceFilter.FILTERED_FILES_KEY,
+                this.originalExcludes,
+                vscode.ConfigurationTarget.Workspace
+            );
+
+            // Update internal state
             this.isFiltering = false;
             this.currentActiveProject = undefined;
+
+            // Update workspace state
             await this.context.workspaceState.update('isCurrentlyFiltering', false);
             await this.context.workspaceState.update('currentActiveProject', undefined);
 
+            // Verify the change was applied
+            const verifyConfig = vscode.workspace.getConfiguration();
+            const verifyExcludes = verifyConfig.get(WorkspaceFilter.FILTERED_FILES_KEY);
+            Logger.info('Verified excludes after disabling filtering:', verifyExcludes);
+
             Logger.info('Disabled project filtering, restored ALL folders');
 
-            // Force refresh explorer to show all folders
+            // Force refresh explorer to show all folders - multiple attempts
             await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+
+            // Second refresh after delay to ensure visibility
+            setTimeout(async () => {
+                await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+                Logger.info('Secondary explorer refresh completed');
+            }, 300);
+
+            // Third refresh after longer delay as final guarantee
+            setTimeout(async () => {
+                await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+                Logger.info('Final explorer refresh completed');
+            }, 1000);
 
         } catch (error) {
             Logger.error('Failed to disable project filtering', error);
@@ -150,8 +188,22 @@ export class WorkspaceFilter {
         try {
             const config = vscode.workspace.getConfiguration();
 
+            // Get current excludes to compare
+            const currentExcludes = config.get(WorkspaceFilter.FILTERED_FILES_KEY) || {};
+            Logger.info('Current excludes before restore:', currentExcludes);
+            Logger.info('Original excludes to restore:', this.originalExcludes);
+
             // CRITICAL FIX: Always restore to the original excludes to show ALL folders
-            await config.update(WorkspaceFilter.FILTERED_FILES_KEY, this.originalExcludes, vscode.ConfigurationTarget.Workspace);
+            await config.update(
+                WorkspaceFilter.FILTERED_FILES_KEY,
+                this.originalExcludes,
+                vscode.ConfigurationTarget.Workspace
+            );
+
+            // Verify the configuration was applied
+            const updatedConfig = vscode.workspace.getConfiguration();
+            const verifyExcludes = updatedConfig.get(WorkspaceFilter.FILTERED_FILES_KEY);
+            Logger.info('Verified excludes after restore:', verifyExcludes);
 
             // Clear workspace state
             await this.context.workspaceState.update('originalFileExcludes', undefined);
@@ -164,13 +216,34 @@ export class WorkspaceFilter {
             this.selectedProjectPaths = [];
             this.currentActiveProject = undefined;
 
-            // Force refresh explorer to ensure all folders show
+            // Force multiple refreshes to ensure all folders show
             await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+
+            // Additional refresh after short delay
+            setTimeout(async () => {
+                await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+            }, 300);
 
             Logger.info('Restored original file excludes - ALL folders should now be visible');
 
         } catch (error) {
             Logger.error('Failed to restore original configuration', error);
+
+            // Fallback: Try to manually clear workspace settings.json
+            try {
+                const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+                if (workspaceFolder) {
+                    const config = vscode.workspace.getConfiguration();
+                    // Force clear with empty object and then restore original
+                    await config.update(WorkspaceFilter.FILTERED_FILES_KEY, {}, vscode.ConfigurationTarget.Workspace);
+                    setTimeout(async () => {
+                        await config.update(WorkspaceFilter.FILTERED_FILES_KEY, this.originalExcludes, vscode.ConfigurationTarget.Workspace);
+                        await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+                    }, 500);
+                }
+            } catch (fallbackError) {
+                Logger.error('Fallback restore also failed', fallbackError);
+            }
         }
     }
 

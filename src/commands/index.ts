@@ -1,8 +1,8 @@
-// src/commands/index.ts - Updated to handle both tree providers and debug commands
+// src/commands/index.ts - Updated to handle OptimizedSessionManager
 import * as vscode from 'vscode';
 import { ProjectTreeDataProvider } from '../providers/projectTreeDataProvider';
 import { AllProjectsTreeDataProvider } from '../providers/allProjectsTreeDataProvider';
-import { SessionManager } from '../utils/sessionManager';
+import { OptimizedSessionManager } from '../utils/optimizedSessionManager';
 import { registerProjectCommands } from './projectCommands';
 import { registerDebugCommands } from './debugCommands';
 import { Logger } from '../utils/logger';
@@ -10,18 +10,18 @@ import { Logger } from '../utils/logger';
 export function registerAllCommands(
     context: vscode.ExtensionContext,
     projectTreeDataProvider: ProjectTreeDataProvider,
-    sessionManager: SessionManager,
+    sessionManager: OptimizedSessionManager, // Updated type
     allProjectsTreeDataProvider?: AllProjectsTreeDataProvider
 ) {
-    Logger.info('=== Registering all commands ===');
+    Logger.info('=== Registering all commands with optimized session manager ===');
 
-    // Register main project commands
+    // Register main project commands with optimized session manager
     registerProjectCommands(context, projectTreeDataProvider, sessionManager);
 
-    // Register debug commands (always available)
+    // Register debug commands
     registerDebugCommands(context);
 
-    // Register command to refresh both tree providers when projects change
+    // Register command to refresh both tree providers
     const refreshAllTrees = vscode.commands.registerCommand('project-switcher.refreshAllTrees', () => {
         Logger.debug('Refreshing both tree providers...');
         projectTreeDataProvider.refresh();
@@ -32,5 +32,5 @@ export function registerAllCommands(
     });
 
     context.subscriptions.push(refreshAllTrees);
-    Logger.info(`Total commands registered. Context subscriptions: ${context.subscriptions.length}`);
+    Logger.info(`Total commands registered with optimizations. Context subscriptions: ${context.subscriptions.length}`);
 }

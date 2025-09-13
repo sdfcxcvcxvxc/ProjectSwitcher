@@ -1,124 +1,146 @@
 # Project Switcher
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/KhanhRomVN/ProjectSwitcher)
+[![Version](https://img.shields.io/badge/version-1.0.3-blue.svg)](https://github.com/KhanhRomVN/ProjectSwitcher)
 [![GitHub issues](https://img.shields.io/github/issues/KhanhRomVN/ProjectSwitcher)](https://github.com/KhanhRomVN/ProjectSwitcher/issues)
 [![GitHub stars](https://img.shields.io/github/stars/KhanhRomVN/ProjectSwitcher)](https://github.com/KhanhRomVN/ProjectSwitcher/stargazers)
 
 A powerful Visual Studio Code extension that enables seamless switching between project folders while preserving your tabs, sessions, and workspace state. Perfect for developers working with multiple projects in a single workspace or managing monorepos with multiple sub-projects.
 
-## 🚀 Key Features
+![Project Switcher Demo](https://raw.githubusercontent.com/KhanhRomVN/ProjectSwitcher/main/images/demo.gif)
 
-### 🔄 **Smart Project Switching**
+## Features
 
-- Switch between projects instantly with preserved context
-- Automatic workspace filtering to show only the active project
-- Keyboard shortcuts (Ctrl+Alt+1-9) for lightning-fast navigation
-- Visual status bar indicator with filtering status
+### Smart Project Management
 
-### 💾 **Intelligent Session Management**
+- **Auto-detection**: Automatically detects parent directory workspaces with multiple sub-projects
+- **Instant switching**: Switch between projects with preserved context and state
+- **Project ordering**: Organize projects with customizable order (1-9 for keyboard shortcuts)
+- **Enable/disable projects**: Hide projects from quick switching while keeping their configuration
 
-- Preserve open tabs, cursor positions, and selections
-- Automatic session saving on project switch
-- Manual session save/restore capabilities
-- Per-project session management settings
+### Intelligent Session Management
 
-### 🎯 **Workspace Filtering**
+- **Tab preservation**: Save and restore open tabs with cursor positions and selections
+- **Project-specific sessions**: Each project maintains its own tab state
+- **Automatic saving**: Sessions are saved automatically when switching projects
+- **Manual control**: Save or clear sessions manually for any project
+- **Smart filtering**: Only saves tabs belonging to the current project directory
 
-- Show only the active project folder in the explorer
-- Hide irrelevant folders to reduce clutter
-- Toggle filtering on/off with a single command
-- Maintains original workspace configuration
+### Workspace Filtering
 
-### ⚡ **Productivity Features**
+- **Focus mode**: Show only the active project folder in the explorer
+- **Auto-filtering**: Automatically enables when switching projects
+- **Quick toggle**: Toggle filtering on/off with keyboard shortcut
+- **Original preservation**: Maintains original workspace configuration when disabled
 
-- Auto-detection of parent directory workspaces
-- Project ordering and management
-- Session status indicators
-- Comprehensive logging for troubleshooting
+### Productivity Features
 
-## 📦 Installation
+- **Keyboard shortcuts**: Quick project switching with `Ctrl+Alt+1-9`
+- **Status bar integration**: Current project display with filtering indicator
+- **Project menu**: Quick access via `Ctrl+Alt+M`
+- **Visual indicators**: Clear status indicators for active projects and sessions
+
+## Installation
 
 ### From VS Code Marketplace
 
 1. Open VS Code
 2. Go to Extensions view (`Ctrl+Shift+X`)
 3. Search for "Project Switcher"
-4. Click Install
+4. Click **Install**
 
-### From Source
+### Manual Installation
 
-1. Clone this repository
-2. Run `npm install`
-3. Run `npm run build`
-4. Install the generated `.vsix` file
+1. Download the latest `.vsix` file from [Releases](https://github.com/KhanhRomVN/ProjectSwitcher/releases)
+2. Open VS Code
+3. Run command `Extensions: Install from VSIX...`
+4. Select the downloaded file
 
-## 🛠️ Usage
+## Quick Start
 
-### Getting Started
+### 1. Set Up Your Workspace
 
-1. **Open a Parent Directory Workspace**
+Open a folder containing multiple project directories:
 
-   ```
-   my-workspace/
-   ├── project-1/
-   ├── project-2/
-   ├── project-3/
-   └── shared-resources/
-   ```
+```
+my-workspace/
+├── frontend-app/     # Your React/Vue/Angular app
+├── backend-api/      # Your Node.js/Python API
+├── mobile-app/       # Your React Native/Flutter app
+├── shared-lib/       # Shared utilities
+└── documentation/    # Project documentation
+```
 
-2. **Enable Project Switcher**
+### 2. Enable Project Switcher
 
-   - The extension automatically detects parent directory workspaces
-   - Click "Enable Project Switcher" when prompted
-   - Or use the command palette: `Project Switcher: Toggle Project Switcher`
+When you open a multi-project workspace, Project Switcher will automatically detect it and ask if you want to enable it. You can also:
 
-3. **Select Your Projects**
-   - Choose which folders should be managed as projects
-   - The extension supports up to 9 projects with keyboard shortcuts
+- Click the **Enable Project Switcher** button in the sidebar
+- Use Command Palette: `Project Switcher: Toggle Project Switcher`
 
-### Core Workflow
+### 3. Start Switching
 
-#### 🔀 Switching Projects
+- **Keyboard**: `Ctrl+Alt+1` through `Ctrl+Alt+9`
+- **Menu**: `Ctrl+Alt+M` for quick project menu
+- **Sidebar**: Click any project in the Project Switcher panel
+- **Status Bar**: Click the current project name
 
-- **Status Bar**: Click the project name in the status bar
-- **Keyboard**: Use `Ctrl+Alt+1` through `Ctrl+Alt+9`
-- **Command Palette**: `Project Switcher: Show Project Menu`
-- **Project Panel**: Click on any project in the sidebar
-
-#### 💾 Managing Sessions
-
-- **Auto-save**: Sessions are saved automatically when switching
-- **Manual save**: Right-click project → "Save Session"
-- **Clear session**: Right-click project → "Clear Session"
-- **Toggle session management**: Enable/disable per project
-
-#### 🎯 Controlling Workspace Filtering
-
-- **Toggle filtering**: `Ctrl+Alt+F` or use the filter button
-- **Auto-enabled**: Filtering is enabled by default when switching
-- **Show all folders**: Disable filtering to see the full workspace
+## Usage Guide
 
 ### Project Management
 
-#### Adding Projects
+#### Enabling/Disabling Projects
 
-Projects are automatically created from selected folders when enabling Project Switcher.
+- **Enable**: Click the green checkmark icon next to a disabled project
+- **Disable**: Click the red circle icon next to an enabled project
+- **Impact**: Disabled projects are hidden from quick switching but retain their configuration
 
-#### Editing Projects
+#### Reordering Projects
 
-- Right-click any project → "Edit Project"
-- Modify name and description
-- Projects are ordered 1-9 for keyboard shortcuts
+- Use the up/down arrow buttons to change project order
+- Order determines keyboard shortcuts (`Ctrl+Alt+1` = order 1, etc.)
 
-#### Removing Projects
+### Session Management
 
-- Right-click any project → "Remove Project"
-- Confirms deletion and clears associated sessions
+#### Automatic Sessions
 
-## ⚙️ Configuration
+- Sessions are automatically saved when switching between projects
+- Only tabs belonging to the current project are saved
+- Cursor positions, selections, and tab states are preserved
 
-### Available Settings
+#### Manual Session Control
+
+- **Save session**: Right-click project → "Save Session"
+- **Clear session**: Right-click project → "Clear Session"
+- **Disable sessions**: Turn off session management per project
+
+### Workspace Filtering
+
+#### How It Works
+
+- Shows only the active project folder in VS Code's Explorer
+- Hides other project folders to reduce clutter
+- Automatically enables when switching projects
+
+#### Toggle Filtering
+
+- **Status bar**: Click the filter indicator
+- **Command**: `Project Switcher: Toggle Project Filtering`
+- **Manual**: Use the toggle button in project menu
+
+## Keyboard Shortcuts
+
+| Shortcut              | Action                        |
+| --------------------- | ----------------------------- |
+| `Ctrl+Alt+1-9`        | Switch to project by order    |
+| `Ctrl+Alt+M`          | Open project switch menu      |
+| Various context menus | Additional actions in sidebar |
+
+_Note: On Mac, use `Cmd` instead of `Ctrl`_
+
+## Configuration
+
+### Extension Settings
 
 ```json
 {
@@ -131,8 +153,6 @@ Projects are automatically created from selected folders when enabling Project S
   "projectSwitcher.logLevel": "info"
 }
 ```
-
-#### Setting Details
 
 | Setting                    | Default  | Description                                           |
 | -------------------------- | -------- | ----------------------------------------------------- |
@@ -148,109 +168,74 @@ Projects are automatically created from selected folders when enabling Project S
 
 Project Switcher works best with:
 
-- **Parent Directory Structure**: A workspace containing 2+ subdirectories
-- **Organized Projects**: Each subdirectory represents a separate project
-- **File-based Projects**: Projects containing actual source files (not just documentation)
+- **Multi-folder workspaces**: 2 or more subdirectories
+- **Project-based structure**: Each folder represents a distinct project
+- **Active development**: Folders containing source code (not just documentation)
 
-## 🎯 Use Cases
+## Use Cases
 
-### 🏢 **Monorepo Management**
+### Monorepo Management
 
 Perfect for monorepos with multiple applications:
 
 ```
 my-monorepo/
-├── frontend-app/     # React application
-├── backend-api/      # Node.js API
-├── mobile-app/       # React Native app
-├── shared-lib/       # Shared utilities
-└── documentation/    # Project docs
-```
-
-### 🔧 **Multi-Project Development**
-
-Ideal for related projects in one workspace:
-
-```
-client-projects/
-├── website/          # Main website
-├── admin-panel/      # Admin interface
+├── web-app/          # React/Vue frontend
+├── mobile-app/       # React Native/Flutter
 ├── api-server/       # Backend API
-└── mobile-app/       # Mobile application
+├── shared-lib/       # Shared utilities
+└── docs/            # Documentation
 ```
 
-### 📚 **Learning & Tutorials**
+### Multi-Project Workflows
 
-Great for course materials and practice projects:
+Ideal for related projects:
 
 ```
-learning-react/
-├── lesson-01-basics/
-├── lesson-02-hooks/
-├── lesson-03-routing/
-├── final-project/
-└── resources/
+client-work/
+├── main-website/     # Primary website
+├── admin-panel/      # Management interface
+├── mobile-app/       # Mobile application
+└── shared-assets/    # Common resources
 ```
 
-## 🚀 Advanced Features
+### Learning and Development
 
-### Session Management Details
+Great for tutorials and practice:
 
-**What Gets Saved:**
+```
+learning-path/
+├── basic-concepts/
+├── intermediate-projects/
+├── advanced-techniques/
+└── final-capstone/
+```
 
-- Open files and their tab positions
-- Cursor positions and selections
-- Active editor and view column
-- Dirty/unsaved file status
-- Pinned tab status
-
-**Session Filtering:**
-
-- Only saves tabs belonging to the current project
-- Automatically filters out tabs from other projects
-- Validates file existence on restore
-- Handles missing files gracefully
-
-### Workspace Filtering Mechanics
-
-**Intelligent Filtering:**
-
-- Hides non-active project folders
-- Preserves original workspace configuration
-- Automatically closes tabs from other projects
-- Restores full workspace when disabled
-
-**Filter States:**
-
-- **Enabled**: Shows only active project folder
-- **Disabled**: Shows all workspace folders
-- **Auto-toggle**: Automatically enables when switching projects
-
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-#### Extension Not Activating
+**Extension not activating**
 
-- Ensure you're in a workspace with 2+ subdirectories
-- Check that subdirectories contain actual files (not just README/LICENSE)
-- Try reloading the window: `Developer: Reload Window`
+- Ensure workspace has 2+ subdirectories with actual files
+- Reload window: `Developer: Reload Window`
+- Check Output panel: View → Output → Project Switcher
 
-#### Sessions Not Saving
+**Sessions not saving**
 
 - Verify session management is enabled for the project
-- Check that files belong to the current project directory
-- Enable debug logging to see session save attempts
+- Ensure files are within the project directory
+- Check if tabs belong to external files
 
-#### Filtering Not Working
+**Filtering not working**
 
-- Ensure workspace filtering is enabled in settings
-- Check that original configuration is properly stored
+- Verify filtering is enabled in settings
 - Try disabling and re-enabling Project Switcher
+- Check if original configuration was properly stored
 
 ### Debug Information
 
-Enable debug logging:
+Enable detailed logging:
 
 ```json
 {
@@ -258,185 +243,123 @@ Enable debug logging:
 }
 ```
 
-View logs: `View > Output > Project Switcher`
+View logs: `View → Output → Project Switcher`
 
 ### Getting Help
 
-1. **Check the [Issues](https://github.com/KhanhRomVN/ProjectSwitcher/issues)** for known problems
-2. **Enable debug logging** and check the Output panel
-3. **Create a new issue** with:
-   - VS Code version
+1. Check [existing issues](https://github.com/KhanhRomVN/ProjectSwitcher/issues)
+2. Enable debug logging and check Output panel
+3. Create a new issue with:
+   - VS Code version and OS
    - Extension version
    - Workspace structure
+   - Steps to reproduce
    - Error logs/screenshots
 
-## 🚧 Roadmap
+## Advanced Features
+
+### Session Details
+
+- **Tab filtering**: Only saves tabs within current project
+- **State preservation**: Cursor positions, selections, dirty status
+- **File validation**: Checks file existence before restoring
+- **Graceful handling**: Skips missing files without errors
+
+### Workspace Intelligence
+
+- **Smart detection**: Identifies parent vs single project workspaces
+- **Configuration backup**: Preserves original VS Code settings
+- **Selective filtering**: Shows/hides folders without affecting settings
+- **Restoration**: Completely restores original state when disabled
+
+### Performance Optimization
+
+- **Lazy loading**: Projects load only when needed
+- **Efficient filtering**: Minimal performance impact
+- **Smart caching**: Reduces repeated file system operations
+- **Memory management**: Cleans up unused sessions
+
+## Roadmap
 
 ### Upcoming Features
 
-- **🎨 Custom Project Icons**: Set custom icons for each project
-- **🏷️ Project Tags**: Organize projects with tags and categories
-- **📊 Usage Analytics**: Track project usage and switch frequency
-- **🔍 Global Search**: Search across all projects simultaneously
-- **⚙️ Custom Commands**: Run project-specific commands on switch
-- **🌐 Remote Workspace Support**: Support for remote development
-- **💼 Project Templates**: Create new projects from templates
+- **Custom project icons**: Visual customization
+- **Project templates**: Quick project setup
+- **Git integration**: Branch-aware switching
+- **Remote workspace support**: Dev containers and codespaces
+- **Project-specific settings**: Environment variables and configurations
 
 ### Version History
 
-#### 1.0.0 (Current)
+#### v1.0.3 (Current)
 
-- Initial release with core functionality
-- Smart project switching with session preservation
-- Workspace filtering and keyboard shortcuts
-- Comprehensive project management
+- Enhanced project disable/enable functionality
+- Improved workspace filtering reliability
+- Better session management with project-specific filtering
+- Comprehensive error handling and logging
 
-## 🤝 Contributing
+#### v1.0.0
 
-We welcome contributions! Here's how you can help:
+- Initial stable release
+- Core project switching functionality
+- Session management and workspace filtering
+- Keyboard shortcuts and UI integration
 
-### 🐛 Bug Reports
+## Contributing
+
+We welcome contributions! Here's how to get involved:
+
+### Bug Reports
 
 - Use the [issue template](https://github.com/KhanhRomVN/ProjectSwitcher/issues/new)
-- Include detailed reproduction steps
-- Provide VS Code and extension versions
-- Attach relevant logs
+- Include reproduction steps and system information
+- Attach relevant logs from Output panel
 
-### 💡 Feature Requests
+### Feature Requests
 
-- Check existing issues first
-- Describe the use case and benefits
-- Consider backward compatibility
-- Provide mockups or examples if applicable
+- Search existing issues first
+- Describe the use case and expected behavior
+- Consider providing mockups or examples
 
-### 🔧 Code Contributions
+### Code Contributions
 
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/amazing-feature`
-3. **Follow the coding standards**:
-   - TypeScript with strict mode
-   - ESLint configuration
-   - Comprehensive error handling
-   - Detailed logging
-4. **Add tests** for new functionality
-5. **Update documentation** as needed
-6. **Submit a pull request**
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature/amazing-feature`
+3. Follow TypeScript best practices
+4. Add tests for new functionality
+5. Update documentation
+6. Submit a pull request
 
 ### Development Setup
 
 ```bash
-# Clone the repository
 git clone https://github.com/KhanhRomVN/ProjectSwitcher.git
 cd ProjectSwitcher
-
-# Install dependencies
 npm install
-
-# Start development
-npm run watch
-
-# Build for production
-npm run build:prod
-
-# Run tests
-npm test
-
-# Lint code
-npm run lint:fix
+npm run watch    # Development mode
+npm run build    # Production build
+npm test         # Run tests
 ```
 
-### Code Structure
+## License
 
-```
-src/
-├── extension.ts           # Main extension entry point
-├── commands/             # Command implementations
-│   ├── index.ts
-│   └── projectCommands.ts
-├── models/               # Data models and types
-│   └── models.ts
-├── providers/            # Tree view providers
-│   └── projectTreeDataProvider.ts
-└── utils/                # Utility classes
-    ├── logger.ts
-    ├── projectUtils.ts
-    ├── sessionManager.ts
-    └── workspaceFilter.ts
-```
+MIT License - see [LICENSE](LICENSE) file for details.
 
-## 📄 License
+## Support
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+- **GitHub Issues**: [Report bugs or request features](https://github.com/KhanhRomVN/ProjectSwitcher/issues)
+- **Email**: [khanhromvn@gmail.com](mailto:khanhromvn@gmail.com)
+- **Documentation**: [Wiki](https://github.com/KhanhRomVN/ProjectSwitcher/wiki)
 
-### MIT License Summary
-
-- ✅ **Commercial use**
-- ✅ **Modification**
-- ✅ **Distribution**
-- ✅ **Private use**
-- ❌ **Liability**
-- ❌ **Warranty**
-
-## 👨‍💻 Author
+## Author
 
 **KhanhRomVN**
 
 - GitHub: [@KhanhRomVN](https://github.com/KhanhRomVN)
 - Email: [khanhromvn@gmail.com](mailto:khanhromvn@gmail.com)
 
-## 🙏 Acknowledgments
-
-### Inspiration & Credits
-
-- **VS Code Team** for the excellent extension API and documentation
-- **Community Contributors** for testing, feedback, and feature suggestions
-- **Open Source Projects** that inspired the architecture and design patterns
-
-### Special Thanks
-
-- Thanks to the VS Code extension development community for best practices
-- Beta testers who provided valuable feedback during development
-- Contributors who helped improve documentation and code quality
-- Users who reported bugs and suggested improvements
-
-### Third-Party Libraries
-
-This extension is built with vanilla TypeScript and VS Code APIs, with no external runtime dependencies. Development dependencies include:
-
-- TypeScript for type safety
-- ESLint for code quality
-- Webpack for bundling
-- Mocha for testing
-
-## 📞 Support
-
-### Getting Help
-
-- **Documentation**: Read this README and check the [Wiki](https://github.com/KhanhRomVN/ProjectSwitcher/wiki)
-- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/KhanhRomVN/ProjectSwitcher/issues)
-- **Discussions**: Join conversations in [GitHub Discussions](https://github.com/KhanhRomVN/ProjectSwitcher/discussions)
-- **Email**: Contact [khanhromvn@gmail.com](mailto:khanhromvn@gmail.com) for private inquiries
-
-### Community
-
-- **⭐ Star** the repository if you find it useful
-- **🐛 Report bugs** to help improve the extension
-- **💡 Suggest features** for future versions
-- **📢 Share** with other developers who might benefit
-
 ---
 
-**Made with ❤️ by KhanhRomVN**
+**Boost your productivity with seamless project switching in VS Code!**
 
-_Boost your productivity with seamless project switching in VS Code!_
-
-hoàn cảnh: folder đang có 2 folder con là "A" và "B"
-
-- lỗi 1: khi chuyển từ enable sang disable thì chỉ hiển thị mỗi "A"
-- yêu cầu 1: xóa "Switch to Project" ở project option vì thừa. thay vào đó click thẳng vào project là switch được rồi
-- yêu cầu 2: xóa icon "Pencil" Edit Project và chức năng rename project
-- yêu cầu 3: xóa icon Trash và tiinhs năng xóa project
-  \_ yêu cầu 4: thêm bạt tắt project sẽ ko xóa project ra khjoir nhưng sẽ bị mờ đi và ẩn đi các option Up, Down.
-- yêu cầu 5: xóaoption Togggle Session Mângerment
-- lỗi 2: ở sidebar tôi đã enable nhưng ở statusbar thì vẫn có thông báo "Enale Project Switcher"
-- đơn giản lại filter project để tránh lôi. đơn giản là project nào đang focus thì folder (projetc) đó hiển thị.)
+Made with care by KhanhRomVN

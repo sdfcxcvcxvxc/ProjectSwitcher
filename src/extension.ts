@@ -1,25 +1,24 @@
-// src/extension.ts - Fixed context management and proper statusbar handling
+// src/extension.ts - Updated to use OptimizedSessionManager
 import * as vscode from 'vscode';
 import { state, WorkspaceMode } from './models/models';
 import { initializeProjectSwitcher, loadProjects } from './utils/projectUtils';
 import { ProjectTreeDataProvider } from './providers/projectTreeDataProvider';
 import { AllProjectsTreeDataProvider } from './providers/allProjectsTreeDataProvider';
 import { registerAllCommands } from './commands';
-import { SessionManager } from './utils/sessionManager';
+import { OptimizedSessionManager } from './utils/optimizedSessionManager';
 import { WorkspaceFilter } from './utils/workspaceFilter';
 import { Logger } from './utils/logger';
 import { createStatusBarItem, updateStatusBar } from './utils/statusBarUtils';
 
 export async function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
-    Logger.info('Project Switcher extension activated');
+    Logger.info('Project Switcher extension activated with optimized session management');
 
     // Always show activity bar icon immediately
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', true);
-    Logger.info('Set context projectSwitcher.isEnabled to true (always visible)');
 
-    // Initialize session manager
-    const sessionManager = new SessionManager(context);
+    // Initialize optimized session manager
+    const sessionManager = new OptimizedSessionManager(context);
     state.sessionManager = sessionManager;
 
     // Initialize workspace filter
@@ -29,43 +28,37 @@ export async function activate(context: vscode.ExtensionContext) {
     // Load existing projects
     loadProjects(context);
 
-    // Create both tree data providers immediately
+    // Create both tree data providers
     const projectTreeDataProvider = new ProjectTreeDataProvider();
     const allProjectsTreeDataProvider = new AllProjectsTreeDataProvider();
 
-    // Always create tree views
-    Logger.info('Creating tree views...');
+    // Create tree views
     try {
         const projectTreeView = vscode.window.createTreeView('projectManager', {
             treeDataProvider: projectTreeDataProvider,
             showCollapseAll: false
         });
         context.subscriptions.push(projectTreeView);
-        Logger.info('Project Manager tree view created successfully');
 
         const allProjectsTreeView = vscode.window.createTreeView('allProjects', {
             treeDataProvider: allProjectsTreeDataProvider,
             showCollapseAll: false
         });
         context.subscriptions.push(allProjectsTreeView);
-        Logger.info('All Projects tree view created successfully');
 
     } catch (error) {
         Logger.error('Failed to create tree views', error);
     }
 
-    // Register all commands immediately
+    // Register all commands with optimized session manager
     registerAllCommands(context, projectTreeDataProvider, sessionManager, allProjectsTreeDataProvider);
 
-    // Detect workspace mode and initialize if needed
+    // Detect workspace mode and initialize
     const isAutoEnabled = await initializeProjectSwitcher(context);
     state.isProjectSwitcherEnabled = isAutoEnabled;
 
     // Set contexts for UI visibility
     await updateContexts();
-
-    Logger.info(`Workspace mode: ${state.workspaceMode}`);
-    Logger.info(`Project Switcher auto-enabled: ${isAutoEnabled}`);
 
     // Handle different workspace modes
     if (isAutoEnabled) {
@@ -75,59 +68,61 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     state.isInitialized = true;
-    Logger.info('Project Switcher extension fully initialized');
+    Logger.info('Project Switcher extension fully initialized with optimizations');
 
-    // Force refresh Activity Bar after initialization
+    // Show performance tip for users with many tabs
     setTimeout(async () => {
-        try {
-            await vscode.commands.executeCommand('workbench.view.extension.project-switcher');
-            Logger.info('Successfully opened Project Switcher activity bar');
-        } catch (error) {
-            Logger.debug('Could not auto-open activity bar (this is normal)', error);
+        if (state.isProjectSwitcherEnabled && state.projects.length > 0) {
+            let totalTabs = 0;
+            for (const project of state.projects) {
+                totalTabs += await sessionManager.getProjectTabCount(project.id);
+            }
+
+            if (totalTabs > 100) {
+                vscode.window.showInformationMessage(
+                    `Project Switcher detected ${totalTabs} total tabs across projects. Using optimized tab management for smooth switching.`,
+                    'Learn More'
+                ).then(selection => {
+                    if (selection === 'Learn More') {
+                        vscode.env.openExternal(vscode.Uri.parse('https://github.com/KhanhRomVN/ProjectSwitcher#performance'));
+                    }
+                });
+            }
         }
-    }, 1000);
+    }, 3000);
 }
 
-// Update VS Code contexts based on state
 async function updateContexts() {
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', state.isProjectSwitcherEnabled);
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.hasMultipleProjects',
         state.isProjectSwitcherEnabled && state.projects.length > 1);
-    Logger.debug(`Updated contexts: isEnabled=${state.isProjectSwitcherEnabled}, hasMultipleProjects=${state.isProjectSwitcherEnabled && state.projects.length > 1}`);
 }
 
-// Setup for fully enabled Project Switcher mode
 async function setupEnabledMode(
     context: vscode.ExtensionContext,
     workspaceFilter: WorkspaceFilter,
-    sessionManager: SessionManager,
+    sessionManager: OptimizedSessionManager,
     projectTreeDataProvider: ProjectTreeDataProvider,
     allProjectsTreeDataProvider: AllProjectsTreeDataProvider
 ) {
-    // Store original workspace configuration
     await workspaceFilter.storeOriginalConfiguration();
-
-    // Restore filtering state if it was previously enabled
     await workspaceFilter.restoreFilteringState();
 
-    Logger.info('Project Switcher enabled for parent directory workspace');
+    Logger.info('Project Switcher enabled with optimized session management');
 
-    // Create and show status bar item immediately
     createStatusBarItem(context);
     updateStatusBar();
 
-    // Setup auto-save on tab changes
-    const autoSaveSubscriptions = setupAutoSave(sessionManager);
+    // Setup optimized auto-save with batching
+    const autoSaveSubscriptions = setupOptimizedAutoSave(sessionManager);
     autoSaveSubscriptions.forEach(sub => context.subscriptions.push(sub));
 
-    // Setup tree refresh listeners with context updates
     const refreshBothTrees = async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
         await updateContexts();
     };
 
-    // Refresh trees when projects change
     context.subscriptions.push(
         vscode.commands.registerCommand('project-switcher.refreshAllTrees', refreshBothTrees)
     );
@@ -137,20 +132,13 @@ async function setupReadyMode(
     context: vscode.ExtensionContext,
     projectTreeDataProvider: ProjectTreeDataProvider,
     allProjectsTreeDataProvider: AllProjectsTreeDataProvider,
-    sessionManager: SessionManager
+    sessionManager: OptimizedSessionManager
 ) {
-    Logger.info('Project Switcher in ready mode - can be enabled manually');
+    Logger.info('Project Switcher in ready mode with optimized session management');
 
-    // Show helpful message in tree view
     projectTreeDataProvider.refresh();
     allProjectsTreeDataProvider.refresh();
 
-    // Don't create conflicting statusbar items in ready mode
-    if (state.workspaceMode === WorkspaceMode.ParentDirectory) {
-        Logger.debug('Parent directory detected - ready for manual enabling');
-    }
-
-    // Setup tree refresh command with context updates
     const refreshCommand = vscode.commands.registerCommand('project-switcher.refreshAllTrees', async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
@@ -159,71 +147,90 @@ async function setupReadyMode(
     context.subscriptions.push(refreshCommand);
 }
 
-async function activateFullMode(
-    context: vscode.ExtensionContext,
-    projectTreeDataProvider: ProjectTreeDataProvider,
-    allProjectsTreeDataProvider: AllProjectsTreeDataProvider,
-    sessionManager: SessionManager
-) {
-    Logger.info('Activating full Project Switcher mode');
+function setupOptimizedAutoSave(sessionManager: OptimizedSessionManager): vscode.Disposable[] {
+    let saveTimeout: NodeJS.Timeout;
+    let pendingSave = false;
 
-    state.isProjectSwitcherEnabled = true;
-    await updateContexts();
+    // Debounced save function to prevent excessive saves
+    const debouncedSave = () => {
+        if (pendingSave) return;
 
-    // Store original workspace configuration
-    if (state.workspaceFilter) {
-        await state.workspaceFilter.storeOriginalConfiguration();
-    }
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(async () => {
+            if (state.currentProjectId) {
+                pendingSave = true;
+                try {
+                    await sessionManager.saveCurrentSession();
+                } catch (error) {
+                    Logger.warn('Auto-save failed', error);
+                } finally {
+                    pendingSave = false;
+                }
+            }
+        }, 3000); // Increased debounce time for better performance
+    };
 
-    // Create status bar item when activating
-    createStatusBarItem(context);
-    updateStatusBar();
-
-    // Update UI
-    projectTreeDataProvider.refresh();
-    allProjectsTreeDataProvider.refresh();
-
-    // Setup auto-save on tab changes
-    const autoSaveSubscriptions = setupAutoSave(sessionManager);
-    autoSaveSubscriptions.forEach(sub => context.subscriptions.push(sub));
-
-    Logger.info('Full Project Switcher mode activated');
-}
-
-function setupAutoSave(sessionManager: SessionManager): vscode.Disposable[] {
-    // Save session when switching between tabs
-    const tabChangeHandler = vscode.window.onDidChangeActiveTextEditor(() => {
-        if (state.currentProjectId) {
-            sessionManager.saveCurrentSession();
+    // Save on significant events
+    const tabChangeHandler = vscode.window.onDidChangeActiveTextEditor((editor) => {
+        if (state.currentProjectId && editor) {
+            debouncedSave();
         }
     });
 
-    // Save session periodically when editing
-    let saveTimeout: NodeJS.Timeout;
+    // Save on document changes but less frequently
     const documentChangeHandler = vscode.workspace.onDidChangeTextDocument(() => {
         if (state.currentProjectId) {
-            clearTimeout(saveTimeout);
-            saveTimeout = setTimeout(() => {
-                sessionManager.saveCurrentSession();
-            }, 2000);
+            debouncedSave();
         }
     });
 
-    return [tabChangeHandler, documentChangeHandler];
+    // Save when tabs are closed/moved
+    const tabGroupsHandler = vscode.window.tabGroups.onDidChangeTabs(() => {
+        if (state.currentProjectId) {
+            debouncedSave();
+        }
+    });
+
+    // Save when VS Code loses focus (user might be switching apps)
+    const windowFocusHandler = vscode.window.onDidChangeWindowState((windowState) => {
+        if (!windowState.focused && state.currentProjectId) {
+            // Immediate save when losing focus
+            clearTimeout(saveTimeout);
+            sessionManager.saveCurrentSession().catch(error => {
+                Logger.warn('Focus-based save failed', error);
+            });
+        }
+    });
+
+    return [tabChangeHandler, documentChangeHandler, tabGroupsHandler, windowFocusHandler];
 }
 
 export function deactivate() {
-    // Restore original configuration before deactivating
-    if (state.workspaceFilter) {
-        state.workspaceFilter.restoreOriginalConfiguration();
-    }
-
     // Save current session before deactivating
     if (state.currentProjectId && state.sessionManager) {
-        state.sessionManager.saveCurrentSession();
+        try {
+            // Force synchronous save on deactivation
+            state.sessionManager.saveCurrentSession();
+        } catch (error) {
+            Logger.warn('Failed to save session during deactivation', error);
+        }
     }
 
-    // Cleanup
+    // Restore original configuration
+    if (state.workspaceFilter) {
+        try {
+            state.workspaceFilter.restoreOriginalConfiguration();
+        } catch (error) {
+            Logger.warn('Failed to restore workspace filter during deactivation', error);
+        }
+    }
+
+    // Dispose optimized session manager
+    if (state.sessionManager && typeof state.sessionManager.dispose === 'function') {
+        state.sessionManager.dispose();
+    }
+
+    // Cleanup state
     state.projects.length = 0;
     state.sessions.clear();
     state.currentProjectId = undefined;
@@ -231,6 +238,7 @@ export function deactivate() {
     state.isProjectSwitcherEnabled = false;
     state.isProjectFilteringEnabled = false;
     state.workspaceFilter = undefined;
+    state.sessionManager = undefined;
 
     Logger.dispose();
 }
