@@ -2,7 +2,7 @@
   "name": "projects-switcher",
   "displayName": "Projects Switcher",
   "description": "Switch between project folders while preserving tabs and sessions with intelligent workspace filtering",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "khanhromvn",
   "author": {
     "name": "KhanhRomVN",
