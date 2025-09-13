@@ -1,4 +1,4 @@
-// src/utils/projectUtils.ts - Updated version
+// src/utils/projectUtils.ts - Updated with WorkspaceFilter integration
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -125,22 +125,36 @@ async function enableProjectSwitcher(context: vscode.ExtensionContext) {
     state.projects.length = 0;
 
     // Auto-create projects for subdirectories (up to 9)
+    const selectedPaths: string[] = [];
     for (let i = 0; i < Math.min(subdirs.length, 9); i++) {
         const subdir = subdirs[i];
 
         const project = createProject(subdir.name, subdir.path, `Project in ${subdir.name}`);
         project.order = i + 1;
+        selectedPaths.push(subdir.path);
 
         Logger.debug(`Created project: ${subdir.name} with order ${i + 1}`);
     }
 
+    // Store selected project paths in workspace filter
+    if (state.workspaceFilter) {
+        await state.workspaceFilter.setSelectedProjects(selectedPaths);
+    }
+
     saveProjects(context);
 
-    // Set first project as current if none selected
-    if (!state.currentProjectId && state.projects.length > 0) {
-        // Don't automatically switch, just mark the first as current
-        // User can manually switch when ready
-        Logger.debug('Projects created, ready for switching');
+    // Set first project as current and enable filtering by default
+    if (state.projects.length > 0) {
+        const firstProject = state.projects[0];
+        state.currentProjectId = firstProject.id;
+
+        // Auto-enable filtering to show only the first project
+        if (state.workspaceFilter) {
+            await state.workspaceFilter.enableProjectFiltering(firstProject.path);
+            state.isProjectFilteringEnabled = true;
+        }
+
+        Logger.debug(`Set current project to: ${firstProject.name} with filtering enabled`);
     }
 }
 
@@ -165,7 +179,7 @@ export function createProject(
     return project;
 }
 
-// Switch project using workspace folder manipulation instead of opening new window
+// Enhanced switch project with workspace filtering support
 export async function switchToProject(projectId: string): Promise<boolean> {
     const project = getProjectById(projectId);
     if (!project) {
@@ -193,6 +207,11 @@ export async function switchToProject(projectId: string): Promise<boolean> {
         const oldProjectId = state.currentProjectId;
         state.currentProjectId = projectId;
         project.lastUsed = Date.now();
+
+        // Apply workspace filtering if enabled
+        if (state.workspaceFilter && state.workspaceFilter.isCurrentlyFiltering()) {
+            await state.workspaceFilter.updateProjectFilter(project.path);
+        }
 
         // Focus project directory in Explorer instead of opening new workspace
         await focusProjectInExplorer(project.path);
@@ -338,17 +357,37 @@ async function enableProjectSwitcherWithSelectedFolders(context: vscode.Extensio
     state.projects.length = 0;
 
     // Create projects for selected folders
+    const selectedPaths: string[] = [];
     for (let i = 0; i < selectedFolders.length; i++) {
         const folder = selectedFolders[i];
 
         const project = createProject(folder.name, folder.path, `Project in ${folder.name}`);
         project.order = i + 1;
+        selectedPaths.push(folder.path);
 
         Logger.debug(`Created project: ${folder.name} with order ${i + 1}`);
     }
 
+    // Store selected project paths in workspace filter
+    if (state.workspaceFilter) {
+        await state.workspaceFilter.setSelectedProjects(selectedPaths);
+    }
+
     saveProjects(context);
-    Logger.info(`Created ${selectedFolders.length} projects from selected folders`);
+
+    // Set first project as current and enable filtering by default
+    if (state.projects.length > 0) {
+        const firstProject = state.projects[0];
+        state.currentProjectId = firstProject.id;
+
+        // Auto-enable filtering to show only the first project
+        if (state.workspaceFilter) {
+            await state.workspaceFilter.enableProjectFiltering(firstProject.path);
+            state.isProjectFilteringEnabled = true;
+        }
+
+        Logger.info(`Created ${selectedFolders.length} projects with filtering enabled for: ${firstProject.name}`);
+    }
 }
 
 export function getProjectById(id: string): ProjectConfig | undefined {
@@ -395,6 +434,7 @@ export function deleteProject(projectId: string): boolean {
     return true;
 }
 
+// Enhanced disable function with workspace filter restoration
 export async function disableProjectSwitcher(context: vscode.ExtensionContext): Promise<void> {
     const confirm = await vscode.window.showWarningMessage(
         'This will disable Project Switcher and clear all project configurations. Continue?',
@@ -404,11 +444,17 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
     );
 
     if (confirm === 'Disable') {
+        // Restore original workspace configuration
+        if (state.workspaceFilter) {
+            await state.workspaceFilter.restoreOriginalConfiguration();
+        }
+
         context.globalState.update('projectSwitcherEnabled', false);
         state.projects.length = 0;
         state.currentProjectId = undefined;
         state.sessions.clear();
         state.isProjectSwitcherEnabled = false;
+        state.isProjectFilteringEnabled = false;
         saveProjects(context);
 
         vscode.window.showInformationMessage('Project Switcher disabled');

@@ -1,3 +1,4 @@
+// src/commands/projectCommands.ts - Updated with filtering support
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectTreeItem, ProjectConfig } from '../models/models';
@@ -42,6 +43,9 @@ export function registerProjectCommands(
         vscode.commands.registerCommand('project-switcher.showProjectMenu', () => showProjectMenu(context, treeDataProvider, sessionManager)),
         vscode.commands.registerCommand('project-switcher.toggleMode', () => toggleProjectSwitcherMode(context, treeDataProvider)),
 
+        // New filtering command
+        vscode.commands.registerCommand('project-switcher.toggleFiltering', () => toggleProjectFiltering(context, treeDataProvider)),
+
         // Keyboard shortcut commands (1-9)
         ...Array.from({ length: 9 }, (_, i) => {
             const order = i + 1;
@@ -52,6 +56,44 @@ export function registerProjectCommands(
     ];
 
     commands.forEach(cmd => context.subscriptions.push(cmd));
+}
+
+// New function to toggle project filtering
+async function toggleProjectFiltering(context: vscode.ExtensionContext, treeDataProvider: ProjectTreeDataProvider) {
+    if (!state.workspaceFilter || !state.isProjectSwitcherEnabled) {
+        vscode.window.showWarningMessage('Project Switcher must be enabled to use filtering');
+        return;
+    }
+
+    try {
+        const isCurrentlyFiltering = state.workspaceFilter.isCurrentlyFiltering();
+
+        if (isCurrentlyFiltering) {
+            // Disable filtering - show all folders
+            await state.workspaceFilter.disableProjectFiltering();
+            state.isProjectFilteringEnabled = false;
+            updateStatusBar();
+            vscode.window.showInformationMessage('Project filtering disabled - all folders visible');
+            Logger.info('Project filtering disabled by user');
+        } else {
+            // Enable filtering - show only active project
+            if (state.currentProjectId) {
+                const project = getProjectById(state.currentProjectId);
+                if (project) {
+                    await state.workspaceFilter.enableProjectFiltering(project.path);
+                    state.isProjectFilteringEnabled = true;
+                    updateStatusBar();
+                    vscode.window.showInformationMessage(`Project filtering enabled - showing only: ${project.name}`);
+                    Logger.info(`Project filtering enabled for: ${project.name}`);
+                }
+            } else {
+                vscode.window.showWarningMessage('No active project to filter by. Switch to a project first.');
+            }
+        }
+    } catch (error: any) {
+        Logger.error('Failed to toggle project filtering', error);
+        vscode.window.showErrorMessage(`Failed to toggle filtering: ${error.message}`);
+    }
 }
 
 async function toggleProjectSwitcherMode(context: vscode.ExtensionContext, treeDataProvider: ProjectTreeDataProvider) {
@@ -68,6 +110,7 @@ async function toggleProjectSwitcherMode(context: vscode.ExtensionContext, treeD
             if (confirm === 'Disable') {
                 await disableProjectSwitcher(context);
                 treeDataProvider.refresh();
+                updateStatusBar();
                 vscode.window.showInformationMessage('Project Switcher disabled');
             }
         } else {
@@ -282,13 +325,13 @@ async function switchToProjectByOrder(
     await performProjectSwitch(project, context, treeDataProvider, sessionManager);
 }
 
+
 async function performProjectSwitch(
     project: ProjectConfig,
     context: vscode.ExtensionContext,
     treeDataProvider: ProjectTreeDataProvider,
     sessionManager: SessionManager
 ) {
-    // Declare oldProjectId outside the try block so it's accessible in catch
     let oldProjectId: string | undefined;
 
     try {
@@ -327,7 +370,7 @@ async function performProjectSwitch(
             return;
         }
 
-        // Store old project ID before updating (now accessible in catch block)
+        // Store old project ID before updating
         oldProjectId = state.currentProjectId;
 
         // Close all current editors
@@ -337,18 +380,21 @@ async function performProjectSwitch(
         state.currentProjectId = project.id;
         project.lastUsed = Date.now();
 
-        // Focus project directory in explorer (this is key for in-workspace switching)
+        // AUTO-ENABLE PROJECT FILTERING when switching (this is the key fix)
+        if (state.workspaceFilter && state.isProjectSwitcherEnabled) {
+            await state.workspaceFilter.enableProjectFiltering(project.path);
+            state.isProjectFilteringEnabled = true;
+            Logger.debug('Auto-enabled project filtering for active project');
+        }
+
+        // Focus project directory in explorer
         const projectUri = vscode.Uri.file(project.path);
         await vscode.commands.executeCommand('revealInExplorer', projectUri);
-
-        // Expand the project directory
         await vscode.commands.executeCommand('list.expand', projectUri);
-
-        // Focus file explorer to make the switch more obvious
         await vscode.commands.executeCommand('workbench.files.action.focusFilesExplorer');
 
         // Small delay to ensure explorer has updated
-        await new Promise(resolve => setTimeout(resolve, 100));
+        await new Promise(resolve => setTimeout(resolve, 200));
 
         // Restore session only if enabled for this project
         if (project.sessionEnabled !== false) {
@@ -360,22 +406,24 @@ async function performProjectSwitch(
         treeDataProvider.refresh();
         updateStatusBar();
 
-        // Show success message
+        // Show success message with filtering info
         const sessionInfo = project.sessionEnabled !== false ?
             (await sessionManager.getProjectTabCount(project.id) > 0 ?
                 ` (${await sessionManager.getProjectTabCount(project.id)} tabs restored)` :
                 ' (no saved session)') :
             ' (session disabled)';
 
-        vscode.window.showInformationMessage(`Switched to project: ${project.name}${sessionInfo}`);
+        const filterInfo = ' • filtering active';
 
-        Logger.info(`Successfully switched to project: ${project.name} from ${oldProjectId || 'none'}`);
+        vscode.window.showInformationMessage(`Switched to project: ${project.name}${sessionInfo}${filterInfo}`);
+
+        Logger.info(`Successfully switched to project: ${project.name} with auto-filtering enabled`);
 
     } catch (error: any) {
         Logger.error(`Failed to switch to project: ${project.name}`, error);
         vscode.window.showErrorMessage(`Failed to switch project: ${error.message}`);
 
-        // Restore previous project on failure (now oldProjectId is in scope)
+        // Restore previous project on failure
         if (oldProjectId && oldProjectId !== project.id) {
             state.currentProjectId = oldProjectId;
         }
@@ -412,6 +460,7 @@ async function moveProjectDown(
     }
 }
 
+// Enhanced project menu with filtering option
 async function showProjectMenu(
     context: vscode.ExtensionContext,
     treeDataProvider: ProjectTreeDataProvider,
@@ -420,12 +469,20 @@ async function showProjectMenu(
     const items = [
         'Switch Project',
         'Manage Projects',
-        'Clear All Sessions'
     ];
 
-    if (state.currentProjectId) {
-        items.splice(1, 0, 'Save Current Session');
+    // Add filtering option if Project Switcher is enabled
+    if (state.isProjectSwitcherEnabled && state.workspaceFilter) {
+        const filteringStatus = state.workspaceFilter.isCurrentlyFiltering() ?
+            'Disable Project Filtering' : 'Enable Project Filtering';
+        items.splice(1, 0, filteringStatus);
     }
+
+    if (state.currentProjectId) {
+        items.splice(-1, 0, 'Save Current Session');
+    }
+
+    items.push('Clear All Sessions');
 
     const selection = await vscode.window.showQuickPick(items, {
         placeHolder: 'Project Switcher'
@@ -434,6 +491,11 @@ async function showProjectMenu(
     switch (selection) {
         case 'Switch Project':
             await showProjectSwitchMenu(context, treeDataProvider, sessionManager);
+            break;
+
+        case 'Enable Project Filtering':
+        case 'Disable Project Filtering':
+            await toggleProjectFiltering(context, treeDataProvider);
             break;
 
         case 'Save Current Session':
@@ -473,12 +535,19 @@ async function showProjectSwitchMenu(
 
     const sortedProjects = [...state.projects].sort((a, b) => a.order - b.order);
 
-    const items = sortedProjects.map(project => ({
-        label: `[${project.order}] ${project.name}`,
-        description: project.path,
-        detail: project.description,
-        project
-    }));
+    const items = sortedProjects.map(project => {
+        const isActive = project.id === state.currentProjectId;
+        const sessionInfo = project.sessionEnabled !== false ?
+            (state.sessions.has(project.id) ? ' • saved session' : ' • session enabled') :
+            ' • session disabled';
+
+        return {
+            label: `[${project.order}] ${project.name}${isActive ? ' (active)' : ''}`,
+            description: project.path,
+            detail: `${project.description || ''}${sessionInfo}`,
+            project
+        };
+    });
 
     const selection = await vscode.window.showQuickPick(items, {
         placeHolder: 'Select project to switch to',
@@ -497,14 +566,36 @@ function updateStatusBar() {
     if (state.currentProjectId) {
         const project = state.projects.find(p => p.id === state.currentProjectId);
         if (project) {
-            state.statusBarItem.text = `$(folder) ${project.name} [${project.order}]`;
-            state.statusBarItem.tooltip = `Current project: ${project.name}\nPath: ${project.path}\nShortcut: Ctrl+Alt+${project.order}\nSession: ${project.sessionEnabled !== false ? 'Enabled' : 'Disabled'}\nClick to switch project`;
+            let statusText = `$(folder) ${project.name} [${project.order}]`;
+
+            // Add filtering indicator
+            if (state.workspaceFilter?.isCurrentlyFiltering()) {
+                statusText += ' $(filter)';
+            }
+
+            state.statusBarItem.text = statusText;
+
+            let tooltip = `Current project: ${project.name}\nPath: ${project.path}\nShortcut: Ctrl+Alt+${project.order}\nSession: ${project.sessionEnabled !== false ? 'Enabled' : 'Disabled'}`;
+
+            // Add filtering status to tooltip
+            if (state.workspaceFilter) {
+                const filterStatus = state.workspaceFilter.isCurrentlyFiltering() ? 'Enabled (showing only current project)' : 'Disabled (showing all folders)';
+                tooltip += `\nFiltering: ${filterStatus}`;
+            }
+
+            tooltip += '\nClick to switch project';
+            state.statusBarItem.tooltip = tooltip;
             state.statusBarItem.show();
             return;
         }
     }
 
-    state.statusBarItem.text = `$(folder) No Project`;
+    let statusText = `$(folder) No Project`;
+    if (state.workspaceFilter?.isCurrentlyFiltering()) {
+        statusText += ' $(filter)';
+    }
+
+    state.statusBarItem.text = statusText;
     state.statusBarItem.tooltip = 'No project selected. Click to manage projects.';
     state.statusBarItem.show();
 }

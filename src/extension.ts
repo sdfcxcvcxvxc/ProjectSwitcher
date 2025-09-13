@@ -1,9 +1,11 @@
+// src/extension.ts - Updated with WorkspaceFilter integration
 import * as vscode from 'vscode';
 import { state, WorkspaceMode } from './models/models';
 import { initializeProjectSwitcher, loadProjects } from './utils/projectUtils';
 import { ProjectTreeDataProvider } from './providers/projectTreeDataProvider';
 import { registerAllCommands } from './commands';
 import { SessionManager } from './utils/sessionManager';
+import { WorkspaceFilter } from './utils/workspaceFilter';
 import { Logger } from './utils/logger';
 
 export async function activate(context: vscode.ExtensionContext) {
@@ -13,6 +15,10 @@ export async function activate(context: vscode.ExtensionContext) {
     // Initialize session manager
     const sessionManager = new SessionManager(context);
     state.sessionManager = sessionManager;
+
+    // Initialize workspace filter
+    const workspaceFilter = new WorkspaceFilter(context);
+    state.workspaceFilter = workspaceFilter;
 
     // Load existing projects
     loadProjects(context);
@@ -25,6 +31,9 @@ export async function activate(context: vscode.ExtensionContext) {
     state.isProjectSwitcherEnabled = isEnabled;
 
     if (isEnabled) {
+        // Store original workspace configuration
+        await workspaceFilter.storeOriginalConfiguration();
+
         Logger.info('Project Switcher enabled for parent directory workspace');
 
         // Create status bar item
@@ -89,6 +98,11 @@ async function activateFullMode(
 
     state.isProjectSwitcherEnabled = true;
 
+    // Store original workspace configuration
+    if (state.workspaceFilter) {
+        await state.workspaceFilter.storeOriginalConfiguration();
+    }
+
     // Create status bar item
     state.statusBarItem = vscode.window.createStatusBarItem(
         vscode.StatusBarAlignment.Left,
@@ -143,19 +157,46 @@ function updateStatusBar() {
     if (state.currentProjectId) {
         const project = state.projects.find(p => p.id === state.currentProjectId);
         if (project) {
-            state.statusBarItem.text = `$(folder) ${project.name} [${project.order}]`;
-            state.statusBarItem.tooltip = `Current project: ${project.name}\nPath: ${project.path}\nShortcut: Ctrl+Alt+${project.order}\nClick to switch project`;
+            let statusText = `$(folder) ${project.name} [${project.order}]`;
+
+            // Add filtering indicator
+            if (state.workspaceFilter?.isCurrentlyFiltering()) {
+                statusText += ' $(filter)';
+            }
+
+            state.statusBarItem.text = statusText;
+
+            let tooltip = `Current project: ${project.name}\nPath: ${project.path}\nShortcut: Ctrl+Alt+${project.order}\nSession: ${project.sessionEnabled !== false ? 'Enabled' : 'Disabled'}`;
+
+            // Add filtering status to tooltip
+            if (state.workspaceFilter) {
+                const filterStatus = state.workspaceFilter.isCurrentlyFiltering() ? 'Enabled (showing only current project)' : 'Disabled (showing all folders)';
+                tooltip += `\nFiltering: ${filterStatus}`;
+            }
+
+            tooltip += '\nClick to switch project';
+            state.statusBarItem.tooltip = tooltip;
             state.statusBarItem.show();
             return;
         }
     }
 
-    state.statusBarItem.text = `$(folder) No Project`;
+    let statusText = `$(folder) No Project`;
+    if (state.workspaceFilter?.isCurrentlyFiltering()) {
+        statusText += ' $(filter)';
+    }
+
+    state.statusBarItem.text = statusText;
     state.statusBarItem.tooltip = 'No project selected. Click to manage projects.';
     state.statusBarItem.show();
 }
 
 export function deactivate() {
+    // Restore original configuration before deactivating
+    if (state.workspaceFilter) {
+        state.workspaceFilter.restoreOriginalConfiguration();
+    }
+
     // Save current session before deactivating
     if (state.currentProjectId && state.sessionManager) {
         state.sessionManager.saveCurrentSession();
@@ -167,6 +208,8 @@ export function deactivate() {
     state.currentProjectId = undefined;
     state.isInitialized = false;
     state.isProjectSwitcherEnabled = false;
+    state.isProjectFilteringEnabled = false;
+    state.workspaceFilter = undefined;
 
     Logger.dispose();
 }
