@@ -82,6 +82,21 @@
         "command": "project-switcher.showProjectMenu",
         "title": "Project Menu",
         "icon": "$(ellipsis)"
+      },
+      {
+        "command": "project-switcher.enable",
+        "title": "Enable Project Switcher",
+        "icon": "$(folder-library)"
+      },
+      {
+        "command": "project-switcher.disable",
+        "title": "Disable Project Switcher",
+        "icon": "$(close)"
+      },
+      {
+        "command": "project-switcher.toggleMode",
+        "title": "Toggle Project Switcher",
+        "icon": "$(settings-gear)"
       }
     ],
     "keybindings": [
@@ -165,6 +180,11 @@
           "command": "project-switcher.refreshProjects",
           "when": "view == projectManager", 
           "group": "navigation@2"
+        },
+        {
+          "command": "project-switcher.toggleMode",
+          "when": "view == projectManager",
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [

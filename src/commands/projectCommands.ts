@@ -10,7 +10,9 @@ import {
     getProjectById,
     getProjectByOrder,
     validateProjectPath,
-    getNextAvailableOrder
+    getNextAvailableOrder,
+    enableProjectSwitcherManually,
+    disableProjectSwitcher
 } from '../utils/projectUtils';
 import { ProjectTreeDataProvider } from '../providers/projectTreeDataProvider';
 import { SessionManager } from '../utils/sessionManager';
@@ -40,6 +42,7 @@ export function registerProjectCommands(
         // UI commands
         vscode.commands.registerCommand('project-switcher.refreshProjects', () => refreshProjects(treeDataProvider)),
         vscode.commands.registerCommand('project-switcher.showProjectMenu', () => showProjectMenu(context, treeDataProvider, sessionManager)),
+        vscode.commands.registerCommand('project-switcher.toggleMode', () => toggleProjectSwitcherMode(context, treeDataProvider)),
 
         // Keyboard shortcut commands (1-9)
         ...Array.from({ length: 9 }, (_, i) => {
@@ -51,6 +54,36 @@ export function registerProjectCommands(
     ];
 
     commands.forEach(cmd => context.subscriptions.push(cmd));
+}
+
+async function toggleProjectSwitcherMode(context: vscode.ExtensionContext, treeDataProvider: ProjectTreeDataProvider) {
+    try {
+        if (state.isProjectSwitcherEnabled) {
+            // Currently enabled - ask to disable
+            const confirm = await vscode.window.showWarningMessage(
+                'Disable Project Switcher? This will clear all project configurations and sessions.',
+                { modal: true },
+                'Disable',
+                'Cancel'
+            );
+
+            if (confirm === 'Disable') {
+                await disableProjectSwitcher(context);
+                treeDataProvider.refresh();
+                vscode.window.showInformationMessage('Project Switcher disabled');
+            }
+        } else {
+            // Currently disabled - ask to enable
+            const success = await enableProjectSwitcherManually(context);
+            if (success) {
+                treeDataProvider.refresh();
+                updateStatusBar();
+            }
+        }
+    } catch (error: any) {
+        Logger.error('Failed to toggle Project Switcher mode', error);
+        vscode.window.showErrorMessage(`Failed to toggle mode: ${error.message}`);
+    }
 }
 
 async function addCurrentProject(context: vscode.ExtensionContext, treeDataProvider: ProjectTreeDataProvider) {
@@ -308,17 +341,21 @@ async function switchToProjectByOrder(
     await performProjectSwitch(project, context, treeDataProvider, sessionManager);
 }
 
+
 async function performProjectSwitch(
     project: ProjectConfig,
     context: vscode.ExtensionContext,
     treeDataProvider: ProjectTreeDataProvider,
     sessionManager: SessionManager
 ) {
+    // Declare oldProjectId outside the try block so it's accessible in catch
+    let oldProjectId: string | undefined;
+
     try {
         Logger.info(`Switching to project: ${project.name}`);
 
         // Save current session if we have a current project and it has session management enabled
-        if (state.currentProjectId) {
+        if (state.currentProjectId && state.currentProjectId !== project.id) {
             const currentProject = getProjectById(state.currentProjectId);
             if (currentProject?.sessionEnabled !== false) {
                 await sessionManager.saveCurrentSession();
@@ -333,48 +370,75 @@ async function performProjectSwitch(
             return;
         }
 
-        // Get current workspace path for comparison
+        // Get current workspace path for validation
         const currentWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        const targetPath = path.resolve(project.path);
-        const currentPath = currentWorkspace ? path.resolve(currentWorkspace) : '';
-
-        // If we're already in the target workspace, just restore session
-        if (currentPath === targetPath) {
-            Logger.debug('Already in target workspace, restoring session only');
-            state.currentProjectId = project.id;
-            project.lastUsed = Date.now();
-
-            // Restore session only if enabled for this project
-            if (project.sessionEnabled !== false) {
-                await sessionManager.restoreSession(project.id);
-            }
-
-            saveProjects(context);
-            treeDataProvider.refresh();
-            updateStatusBar();
-
-            vscode.window.showInformationMessage(`Switched to project: ${project.name}`);
+        if (!currentWorkspace) {
+            vscode.window.showErrorMessage('No workspace is currently open');
             return;
         }
 
-        // Switch workspace folder without opening new window
-        const uri = vscode.Uri.file(project.path);
-        await vscode.commands.executeCommand('vscode.openFolder', uri, false);
+        // Validate that project is within current workspace (parent directory)
+        const workspaceParent = path.resolve(currentWorkspace);
+        const projectParent = path.resolve(path.dirname(project.path));
 
-        // Update current project (this will be called after workspace changes)
+        if (workspaceParent !== projectParent) {
+            Logger.error(`Project ${project.name} is not in current workspace parent directory`);
+            vscode.window.showErrorMessage(`Project must be within current workspace: ${currentWorkspace}`);
+            return;
+        }
+
+        // Store old project ID before updating (now accessible in catch block)
+        oldProjectId = state.currentProjectId;
+
+        // Close all current editors
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
+        // Update current project immediately
         state.currentProjectId = project.id;
         project.lastUsed = Date.now();
 
+        // Focus project directory in explorer (this is key for in-workspace switching)
+        const projectUri = vscode.Uri.file(project.path);
+        await vscode.commands.executeCommand('revealInExplorer', projectUri);
+
+        // Expand the project directory
+        await vscode.commands.executeCommand('list.expand', projectUri);
+
+        // Focus file explorer to make the switch more obvious
+        await vscode.commands.executeCommand('workbench.files.action.focusFilesExplorer');
+
+        // Small delay to ensure explorer has updated
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Restore session only if enabled for this project
+        if (project.sessionEnabled !== false) {
+            await sessionManager.restoreSession(project.id);
+        }
+
+        // Save projects and update UI
         saveProjects(context);
+        treeDataProvider.refresh();
+        updateStatusBar();
 
-        Logger.info(`Successfully switched to project: ${project.name}`);
+        // Show success message
+        const sessionInfo = project.sessionEnabled !== false ?
+            (await sessionManager.getProjectTabCount(project.id) > 0 ?
+                ` (${await sessionManager.getProjectTabCount(project.id)} tabs restored)` :
+                ' (no saved session)') :
+            ' (session disabled)';
 
-        // Note: Session restoration will happen after workspace loads
-        // We'll set up a workspace change listener for this
+        vscode.window.showInformationMessage(`Switched to project: ${project.name}${sessionInfo}`);
+
+        Logger.info(`Successfully switched to project: ${project.name} from ${oldProjectId || 'none'}`);
 
     } catch (error: any) {
         Logger.error(`Failed to switch to project: ${project.name}`, error);
         vscode.window.showErrorMessage(`Failed to switch project: ${error.message}`);
+
+        // Restore previous project on failure (now oldProjectId is in scope)
+        if (oldProjectId && oldProjectId !== project.id) {
+            state.currentProjectId = oldProjectId;
+        }
     }
 }
 

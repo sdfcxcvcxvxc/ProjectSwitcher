@@ -1,4 +1,6 @@
+// src/utils/sessionManager.ts - Updated version
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { state, ProjectSession, TabInfo } from '../models/models';
 import { getProjectById } from './projectUtils';
 import { Logger } from './logger';
@@ -48,10 +50,13 @@ export class SessionManager {
 
         try {
             const tabs = await this.getCurrentTabs();
+            const explorerState = await this.getExplorerState();
+
             const session: ProjectSession = {
                 projectId: state.currentProjectId,
                 tabs,
                 activeTab: vscode.window.activeTextEditor?.document.uri.toString(),
+                explorerState,
                 lastSaved: Date.now()
             };
 
@@ -84,11 +89,19 @@ export class SessionManager {
             // Close all current editors first
             await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 
+            // Filter tabs that belong to the current project
+            const projectTabs = await this.filterTabsForProject(session.tabs, project.path);
+
+            if (projectTabs.length === 0) {
+                Logger.debug(`No tabs found for project ${projectId} in current workspace`);
+                return false;
+            }
+
             // Restore tabs
             const restoredTabs: vscode.TextEditor[] = [];
             let activeEditor: vscode.TextEditor | undefined;
 
-            for (const tabInfo of session.tabs) {
+            for (const tabInfo of projectTabs) {
                 try {
                     const uri = vscode.Uri.parse(tabInfo.uri);
 
@@ -97,6 +110,13 @@ export class SessionManager {
                         await vscode.workspace.fs.stat(uri);
                     } catch {
                         Logger.warn(`File no longer exists, skipping: ${tabInfo.uri}`);
+                        continue;
+                    }
+
+                    // Check if file is within project directory
+                    const filePath = uri.fsPath;
+                    if (!filePath.startsWith(project.path)) {
+                        Logger.debug(`Skipping file outside project: ${tabInfo.uri}`);
                         continue;
                     }
 
@@ -147,13 +167,38 @@ export class SessionManager {
                 });
             }
 
-            Logger.info(`Successfully restored session for project ${projectId}: ${restoredTabs.length}/${session.tabs.length} tabs`);
+            // Restore explorer state
+            if (session.explorerState) {
+                await this.restoreExplorerState(session.explorerState, project.path);
+            }
+
+            Logger.info(`Successfully restored session for project ${projectId}: ${restoredTabs.length}/${projectTabs.length} tabs`);
             return true;
 
         } catch (error) {
             Logger.error(`Failed to restore session for project ${projectId}`, error);
             return false;
         }
+    }
+
+    private async filterTabsForProject(tabs: TabInfo[], projectPath: string): Promise<TabInfo[]> {
+        const filteredTabs: TabInfo[] = [];
+
+        for (const tab of tabs) {
+            try {
+                const uri = vscode.Uri.parse(tab.uri);
+                const filePath = uri.fsPath;
+
+                // Only include tabs that are within the project directory
+                if (filePath.startsWith(projectPath)) {
+                    filteredTabs.push(tab);
+                }
+            } catch (error) {
+                Logger.warn(`Failed to parse tab URI: ${tab.uri}`, error);
+            }
+        }
+
+        return filteredTabs;
     }
 
     private async getCurrentTabs(): Promise<TabInfo[]> {
@@ -168,6 +213,12 @@ export class SessionManager {
 
             // Skip untitled documents or those not in workspace
             if (document.isUntitled || document.uri.scheme !== 'file') {
+                continue;
+            }
+
+            // Only include tabs that are within the current workspace
+            const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+            if (workspacePath && !document.uri.fsPath.startsWith(workspacePath)) {
                 continue;
             }
 
@@ -193,6 +244,40 @@ export class SessionManager {
         }
 
         return tabs;
+    }
+
+    private async getExplorerState() {
+        // Basic explorer state capture
+        // VS Code doesn't provide direct API for expanded folders, so we'll keep it simple
+        return {
+            expandedDirectories: [], // Could be enhanced with more complex logic
+            selectedFile: vscode.window.activeTextEditor?.document.uri.toString()
+        };
+    }
+
+    private async restoreExplorerState(explorerState: any, projectPath: string) {
+        try {
+            // Focus the project directory in explorer
+            const projectUri = vscode.Uri.file(projectPath);
+            await vscode.commands.executeCommand('revealInExplorer', projectUri);
+
+            // If there was a selected file, try to reveal it
+            if (explorerState.selectedFile) {
+                try {
+                    const fileUri = vscode.Uri.parse(explorerState.selectedFile);
+                    // Only reveal if it's within the project
+                    if (fileUri.fsPath.startsWith(projectPath)) {
+                        await vscode.commands.executeCommand('revealInExplorer', fileUri);
+                    }
+                } catch (error) {
+                    Logger.warn('Failed to restore selected file in explorer', error);
+                }
+            }
+
+            Logger.debug(`Restored explorer state for project: ${projectPath}`);
+        } catch (error) {
+            Logger.warn('Failed to restore explorer state', error);
+        }
     }
 
     clearSession(projectId: string) {
@@ -223,26 +308,17 @@ export class SessionManager {
             return false;
         }
 
-        // Check if this is the current workspace
-        const currentWorkspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-        if (!currentWorkspace || currentWorkspace !== project.path) {
-            Logger.warn(`Cannot save session for project ${projectId}: not current workspace`);
-            return false;
-        }
-
         try {
-            const tabs = await this.getCurrentTabs();
-            const session: ProjectSession = {
-                projectId: projectId,
-                tabs,
-                activeTab: vscode.window.activeTextEditor?.document.uri.toString(),
-                lastSaved: Date.now()
-            };
+            // Temporarily set as current project for session saving
+            const originalCurrentProject = state.currentProjectId;
+            state.currentProjectId = projectId;
 
-            state.sessions.set(projectId, session);
-            this.saveSessions();
+            await this.saveCurrentSession();
 
-            Logger.info(`Manually saved session for project ${projectId} with ${tabs.length} tabs`);
+            // Restore original current project
+            state.currentProjectId = originalCurrentProject;
+
+            Logger.info(`Manually saved session for project ${projectId}`);
             return true;
         } catch (error) {
             Logger.error(`Failed to manually save session for project ${projectId}`, error);
@@ -258,5 +334,17 @@ export class SessionManager {
             tabCount: session?.tabs.length || 0,
             lastSaved: session ? new Date(session.lastSaved) : undefined
         };
+    }
+
+    // Enhanced method to get project-specific tab count
+    async getProjectTabCount(projectId: string): Promise<number> {
+        const project = getProjectById(projectId);
+        if (!project) return 0;
+
+        const session = state.sessions.get(projectId);
+        if (!session) return 0;
+
+        const projectTabs = await this.filterTabsForProject(session.tabs, project.path);
+        return projectTabs.length;
     }
 }

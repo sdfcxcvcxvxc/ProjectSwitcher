@@ -1,3 +1,4 @@
+// src/utils/projectUtils.ts - Updated version
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -27,12 +28,21 @@ export async function detectWorkspaceMode(): Promise<WorkspaceMode> {
     try {
         const entries = await fs.promises.readdir(workspaceRoot, { withFileTypes: true });
 
-        // Count directories and files
-        const directories = entries.filter(entry => entry.isDirectory());
-        const files = entries.filter(entry => entry.isFile() && !entry.name.startsWith('.'));
+        // Count directories and files (excluding hidden files)
+        const directories = entries.filter(entry =>
+            entry.isDirectory() &&
+            !entry.name.startsWith('.') &&
+            !entry.name.startsWith('node_modules')
+        );
+        const meaningfulFiles = entries.filter(entry =>
+            entry.isFile() &&
+            !entry.name.startsWith('.') &&
+            !['README.md', 'LICENSE', '.gitignore'].includes(entry.name)
+        );
 
         // If workspace has 2+ directories and no meaningful files, it's a parent directory
-        if (directories.length >= 2 && files.length === 0) {
+        if (directories.length >= 2 && meaningfulFiles.length === 0) {
+            Logger.info(`Detected parent directory with ${directories.length} subdirectories`);
             return WorkspaceMode.ParentDirectory;
         }
 
@@ -45,12 +55,19 @@ export async function detectWorkspaceMode(): Promise<WorkspaceMode> {
     }
 }
 
-export async function getSubdirectories(parentPath: string): Promise<string[]> {
+export async function getSubdirectories(parentPath: string): Promise<{ name: string, path: string }[]> {
     try {
         const entries = await fs.promises.readdir(parentPath, { withFileTypes: true });
         return entries
-            .filter(entry => entry.isDirectory() && !entry.name.startsWith('.'))
-            .map(entry => entry.name);
+            .filter(entry =>
+                entry.isDirectory() &&
+                !entry.name.startsWith('.') &&
+                !entry.name.startsWith('node_modules')
+            )
+            .map(entry => ({
+                name: entry.name,
+                path: path.join(parentPath, entry.name)
+            }));
     } catch (error) {
         Logger.error('Failed to get subdirectories', error);
         return [];
@@ -84,13 +101,16 @@ export async function initializeProjectSwitcher(context: vscode.ExtensionContext
 }
 
 async function askEnableProjectSwitcher(): Promise<boolean> {
+    const subdirs = await getSubdirectories(vscode.workspace.workspaceFolders![0].uri.fsPath);
+
     const selection = await vscode.window.showInformationMessage(
-        'This workspace contains multiple subdirectories. Would you like to enable Project Switcher to manage them as separate projects?',
-        'Enable',
+        `This workspace contains ${subdirs.length} subdirectories:\n${subdirs.map(d => `• ${d.name}`).join('\n')}\n\nEnable Project Switcher to manage them as separate projects without losing sessions?`,
+        { modal: true },
+        'Enable Project Switcher',
         'Not Now'
     );
 
-    return selection === 'Enable';
+    return selection === 'Enable Project Switcher';
 }
 
 async function enableProjectSwitcher(context: vscode.ExtensionContext) {
@@ -99,24 +119,28 @@ async function enableProjectSwitcher(context: vscode.ExtensionContext) {
     const workspaceRoot = vscode.workspace.workspaceFolders![0].uri.fsPath;
     const subdirs = await getSubdirectories(workspaceRoot);
 
-    // Auto-create projects for all subdirectories
+    Logger.info(`Enabling Project Switcher for ${subdirs.length} subdirectories`);
+
+    // Clear existing projects first
+    state.projects.length = 0;
+
+    // Auto-create projects for subdirectories (up to 9)
     for (let i = 0; i < Math.min(subdirs.length, 9); i++) {
         const subdir = subdirs[i];
-        const subdirPath = path.join(workspaceRoot, subdir);
 
-        // Check if project already exists
-        const exists = state.projects.find(p => p.path === subdirPath);
-        if (!exists) {
-            const project = createProject(subdir, subdirPath, `Project in ${subdir}`);
-            project.order = i + 1;
-        }
+        const project = createProject(subdir.name, subdir.path, `Project in ${subdir.name}`);
+        project.order = i + 1;
+
+        Logger.debug(`Created project: ${subdir.name} with order ${i + 1}`);
     }
 
     saveProjects(context);
 
     // Set first project as current if none selected
     if (!state.currentProjectId && state.projects.length > 0) {
-        state.currentProjectId = state.projects[0].id;
+        // Don't automatically switch, just mark the first as current
+        // User can manually switch when ready
+        Logger.debug('Projects created, ready for switching');
     }
 }
 
@@ -126,7 +150,7 @@ export function createProject(
     description?: string
 ): ProjectConfig {
     const project: ProjectConfig = {
-        id: Date.now().toString(),
+        id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
         name,
         path: projectPath,
         order: 0, // Will be set later
@@ -141,6 +165,7 @@ export function createProject(
     return project;
 }
 
+// NEW: Switch project using workspace folder manipulation instead of opening new window
 export async function switchToProject(projectId: string): Promise<boolean> {
     const project = getProjectById(projectId);
     if (!project) {
@@ -164,19 +189,20 @@ export async function switchToProject(projectId: string): Promise<boolean> {
             await saveCurrentProjectSession();
         }
 
-        // Close all editors
-        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-
         // Update current project
         const oldProjectId = state.currentProjectId;
         state.currentProjectId = projectId;
         project.lastUsed = Date.now();
 
-        // Restore project session
+        // Focus project directory in Explorer instead of opening new workspace
+        await focusProjectInExplorer(project.path);
+
+        // Close all editors and restore project session
+        await vscode.commands.executeCommand('workbench.action.closeAllEditors');
         await restoreProjectSession(projectId);
 
-        // Update file explorer to show project directory
-        await focusProjectInExplorer(project.path);
+        // Update file explorer context
+        await updateExplorerContext(project.path);
 
         Logger.info(`Successfully switched to project: ${project.name}`);
         return true;
@@ -184,6 +210,24 @@ export async function switchToProject(projectId: string): Promise<boolean> {
     } catch (error) {
         Logger.error(`Failed to switch to project: ${project.name}`, error);
         return false;
+    }
+}
+
+async function updateExplorerContext(projectPath: string) {
+    try {
+        // Set the project folder as "root" context for file operations
+        // This doesn't change workspace but influences file explorer behavior
+        const uri = vscode.Uri.file(projectPath);
+
+        // Focus the folder in explorer
+        await vscode.commands.executeCommand('revealInExplorer', uri);
+
+        // Optionally expand the folder
+        await vscode.commands.executeCommand('list.expand', uri);
+
+        Logger.debug(`Updated explorer context to: ${projectPath}`);
+    } catch (error) {
+        Logger.warn('Failed to update explorer context', error);
     }
 }
 
@@ -207,14 +251,34 @@ async function focusProjectInExplorer(projectPath: string) {
     try {
         const uri = vscode.Uri.file(projectPath);
         await vscode.commands.executeCommand('revealInExplorer', uri);
+
+        // Additional commands to focus the project folder
+        await vscode.commands.executeCommand('workbench.files.action.focusFilesExplorer');
+
+        Logger.debug(`Focused project in explorer: ${projectPath}`);
     } catch (error) {
         Logger.warn('Failed to focus project in explorer', error);
     }
 }
 
 function getSessionManager() {
-    // This would be injected or retrieved from state
     return state.sessionManager;
+}
+
+// Add method to manually enable Project Switcher
+export async function enableProjectSwitcherManually(context: vscode.ExtensionContext): Promise<boolean> {
+    const workspaceMode = await detectWorkspaceMode();
+
+    if (workspaceMode !== WorkspaceMode.ParentDirectory) {
+        vscode.window.showWarningMessage('Project Switcher requires a parent directory with 2+ subdirectories');
+        return false;
+    }
+
+    await enableProjectSwitcher(context);
+    state.isProjectSwitcherEnabled = true;
+
+    vscode.window.showInformationMessage('Project Switcher enabled successfully!');
+    return true;
 }
 
 export function getProjectById(id: string): ProjectConfig | undefined {
@@ -264,6 +328,7 @@ export function deleteProject(projectId: string): boolean {
 export async function disableProjectSwitcher(context: vscode.ExtensionContext): Promise<void> {
     const confirm = await vscode.window.showWarningMessage(
         'This will disable Project Switcher and clear all project configurations. Continue?',
+        { modal: true },
         'Disable',
         'Cancel'
     );
@@ -273,12 +338,14 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
         state.projects.length = 0;
         state.currentProjectId = undefined;
         state.sessions.clear();
+        state.isProjectSwitcherEnabled = false;
         saveProjects(context);
 
         vscode.window.showInformationMessage('Project Switcher disabled');
         Logger.info('Project Switcher disabled by user');
     }
 }
+
 export function moveProject(projectId: string, direction: 'up' | 'down'): boolean {
     const project = getProjectById(projectId);
     if (!project) {

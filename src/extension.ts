@@ -17,6 +17,9 @@ export async function activate(context: vscode.ExtensionContext) {
     // Load existing projects
     loadProjects(context);
 
+    // Create tree data provider first
+    const treeDataProvider = new ProjectTreeDataProvider();
+
     // Detect workspace mode and initialize if needed
     const isEnabled = await initializeProjectSwitcher(context);
     state.isProjectSwitcherEnabled = isEnabled;
@@ -33,50 +36,86 @@ export async function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(state.statusBarItem);
 
         // Create tree view
-        const treeDataProvider = new ProjectTreeDataProvider();
         const treeView = vscode.window.createTreeView('projectManager', {
             treeDataProvider,
             showCollapseAll: false
         });
-
-        // Register all commands
-        registerAllCommands(context, treeDataProvider, sessionManager);
+        context.subscriptions.push(treeView);
 
         // Update UI
         updateStatusBar();
 
         // Setup auto-save on tab changes
-        setupAutoSave(sessionManager);
+        const autoSaveSubscriptions = setupAutoSave(sessionManager);
+        autoSaveSubscriptions.forEach(sub => context.subscriptions.push(sub));
 
     } else if (state.workspaceMode === WorkspaceMode.ParentDirectory) {
         // Show option to enable in status bar
-        const statusBarItem = vscode.window.createStatusBarItem(
+        const enableStatusBarItem = vscode.window.createStatusBarItem(
             vscode.StatusBarAlignment.Left,
             100
         );
-        statusBarItem.text = '$(folder) Enable Project Switcher';
-        statusBarItem.tooltip = 'Click to enable Project Switcher for this workspace';
-        statusBarItem.command = 'project-switcher.enable';
-        statusBarItem.show();
-        context.subscriptions.push(statusBarItem);
+        enableStatusBarItem.text = '$(folder) Enable Project Switcher';
+        enableStatusBarItem.tooltip = 'Click to enable Project Switcher for this workspace';
+        enableStatusBarItem.command = 'project-switcher.enable';
+        enableStatusBarItem.show();
+        context.subscriptions.push(enableStatusBarItem);
 
         // Register enable command
         const enableCommand = vscode.commands.registerCommand('project-switcher.enable', async () => {
             const enabled = await initializeProjectSwitcher(context);
             if (enabled) {
-                statusBarItem.dispose();
+                enableStatusBarItem.dispose();
                 // Re-activate with full functionality
-                await activate(context);
+                await activateFullMode(context, treeDataProvider, sessionManager);
             }
         });
         context.subscriptions.push(enableCommand);
     }
 
+    // Always register all commands (even when disabled)
+    registerAllCommands(context, treeDataProvider, sessionManager);
+
     state.isInitialized = true;
     Logger.info('Project Switcher extension fully initialized');
 }
 
-function setupAutoSave(sessionManager: SessionManager) {
+async function activateFullMode(
+    context: vscode.ExtensionContext,
+    treeDataProvider: ProjectTreeDataProvider,
+    sessionManager: SessionManager
+) {
+    Logger.info('Activating full Project Switcher mode');
+
+    state.isProjectSwitcherEnabled = true;
+
+    // Create status bar item
+    state.statusBarItem = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Left,
+        100
+    );
+    state.statusBarItem.command = 'project-switcher.showProjectMenu';
+    context.subscriptions.push(state.statusBarItem);
+
+    // Create tree view
+    const treeView = vscode.window.createTreeView('projectManager', {
+        treeDataProvider,
+        showCollapseAll: false
+    });
+    context.subscriptions.push(treeView);
+
+    // Update UI
+    treeDataProvider.refresh();
+    updateStatusBar();
+
+    // Setup auto-save on tab changes
+    const autoSaveSubscriptions = setupAutoSave(sessionManager);
+    autoSaveSubscriptions.forEach(sub => context.subscriptions.push(sub));
+
+    Logger.info('Full Project Switcher mode activated');
+}
+
+function setupAutoSave(sessionManager: SessionManager): vscode.Disposable[] {
     // Save session when switching between tabs
     const tabChangeHandler = vscode.window.onDidChangeActiveTextEditor(() => {
         if (state.currentProjectId) {
