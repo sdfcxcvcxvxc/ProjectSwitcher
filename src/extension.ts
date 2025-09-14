@@ -14,8 +14,14 @@ export async function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
     Logger.info('Project Switcher extension activated with optimized session management (no status bar)');
 
-    // Always show activity bar icon immediately
-    await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', true);
+    // Load existing projects FIRST
+    loadProjects(context);
+
+    // CRITICAL FIX: Load enabled state from globalState BEFORE initializing
+    state.isProjectSwitcherEnabled = context.globalState.get<boolean>('projectSwitcherEnabled') || false;
+
+    // Always show activity bar icon immediately based on actual state
+    await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', state.isProjectSwitcherEnabled);
 
     // Initialize optimized session manager
     const sessionManager = new OptimizedSessionManager(context);
@@ -24,9 +30,6 @@ export async function activate(context: vscode.ExtensionContext) {
     // Initialize workspace filter
     const workspaceFilter = new WorkspaceFilter(context);
     state.workspaceFilter = workspaceFilter;
-
-    // Load existing projects
-    loadProjects(context);
 
     // Create both tree data providers
     const projectTreeDataProvider = new ProjectTreeDataProvider();
@@ -54,15 +57,17 @@ export async function activate(context: vscode.ExtensionContext) {
     setUpdateContexts(updateContexts);
     registerAllCommands(context, projectTreeDataProvider, sessionManager, allProjectsTreeDataProvider);
 
-    // Detect workspace mode and initialize
-    const isAutoEnabled = await initializeProjectSwitcher(context);
-    state.isProjectSwitcherEnabled = isAutoEnabled;
+    // Detect workspace mode and initialize (only if not already enabled)
+    if (!state.isProjectSwitcherEnabled) {
+        const isAutoEnabled = await initializeProjectSwitcher(context);
+        state.isProjectSwitcherEnabled = isAutoEnabled;
+    }
 
     // Set contexts for UI visibility
     await updateContexts();
 
     // Handle different workspace modes
-    if (isAutoEnabled) {
+    if (state.isProjectSwitcherEnabled) {
         await setupEnabledMode(context, workspaceFilter, sessionManager, projectTreeDataProvider, allProjectsTreeDataProvider);
     } else {
         await setupReadyMode(context, projectTreeDataProvider, allProjectsTreeDataProvider, sessionManager);

@@ -8,7 +8,12 @@ import { Logger } from './logger';
 export function loadProjects(context: vscode.ExtensionContext) {
     const stored = context.globalState.get<ProjectConfig[]>('projects');
     if (stored) {
-        state.projects.splice(0, state.projects.length, ...stored);
+        // Ensure all projects have enabled property
+        const normalizedProjects = stored.map(project => ({
+            ...project,
+            enabled: project.enabled !== undefined ? project.enabled : true
+        }));
+        state.projects.splice(0, state.projects.length, ...normalizedProjects);
         Logger.debug(`Loaded ${state.projects.length} projects`);
     }
 }
@@ -138,8 +143,10 @@ async function askEnableProjectSwitcher(): Promise<boolean> {
     return selection === 'Enable Project Switcher';
 }
 
-async function enableProjectSwitcher(context: vscode.ExtensionContext) {
+export async function enableProjectSwitcher(context: vscode.ExtensionContext) {
+    // CRITICAL FIX: Update global state FIRST
     context.globalState.update('projectSwitcherEnabled', true);
+    state.isProjectSwitcherEnabled = true; // Also update in-memory state
 
     const workspaceRoot = vscode.workspace.workspaceFolders![0].uri.fsPath;
     const subdirs = await getSubdirectories(workspaceRoot);
@@ -353,7 +360,9 @@ export async function enableProjectSwitcherManually(context: vscode.ExtensionCon
 }
 
 async function enableProjectSwitcherWithAllFolders(context: vscode.ExtensionContext, allFolders: { name: string, path: string }[]) {
+    // CRITICAL FIX: Update global state FIRST
     context.globalState.update('projectSwitcherEnabled', true);
+    state.isProjectSwitcherEnabled = true; // Also update in-memory state
 
     Logger.info(`Enabling Project Switcher for ALL ${allFolders.length} folders`);
 
@@ -473,6 +482,10 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
 
     if (confirm === 'Disable') {
         try {
+            // CRITICAL FIX: Update global state FIRST
+            context.globalState.update('projectSwitcherEnabled', false);
+            state.isProjectSwitcherEnabled = false; // Also update in-memory state
+
             // CRITICAL: Disable filtering FIRST before clearing other state
             if (state.workspaceFilter) {
                 await state.workspaceFilter.disableProjectFiltering();
@@ -485,14 +498,10 @@ export async function disableProjectSwitcher(context: vscode.ExtensionContext): 
                 Logger.info('Restored original workspace configuration');
             }
 
-            // Update global state
-            context.globalState.update('projectSwitcherEnabled', false);
-
             // Clear all project data
             state.projects.length = 0;
             state.currentProjectId = undefined;
             state.sessions.clear();
-            state.isProjectSwitcherEnabled = false;
             state.isProjectFilteringEnabled = false;
 
             // Clear workspace filter reference
