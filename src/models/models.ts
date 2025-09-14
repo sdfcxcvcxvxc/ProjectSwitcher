@@ -1,4 +1,4 @@
-// src/models/models.ts - Added enabled field for project disable feature
+// src/models/models.ts - Removed status bar item and updated for dynamic ordering
 import * as vscode from 'vscode';
 import { WorkspaceFilter } from '../utils/workspaceFilter';
 
@@ -6,12 +6,12 @@ export interface ProjectConfig {
     id: string;
     name: string;
     path: string;
-    order: number; // 1-9 for keyboard shortcuts
+    order: number; // 1-9 for original order (used for sorting, but dynamic order used for shortcuts)
     color?: string;
     description?: string;
     lastUsed: number;
     sessionEnabled?: boolean;
-    enabled?: boolean; // NEW: For requirement 4 - enable/disable projects
+    enabled?: boolean; // For requirement 4 - enable/disable projects
 }
 
 export interface TabInfo {
@@ -51,7 +51,7 @@ export const state = {
     isProjectSwitcherEnabled: false,
     isProjectFilteringEnabled: false,
     isInitialized: false,
-    statusBarItem: undefined as vscode.StatusBarItem | undefined,
+    // REMOVED: statusBarItem - no longer needed
     sessionManager: undefined as any,
     workspaceFilter: undefined as WorkspaceFilter | undefined,
 };

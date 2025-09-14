@@ -1,4 +1,4 @@
-// src/extension.ts - Updated to use OptimizedSessionManager
+// src/extension.ts - Updated with context management for conditional disable functionality
 import * as vscode from 'vscode';
 import { state, WorkspaceMode } from './models/models';
 import { initializeProjectSwitcher, loadProjects } from './utils/projectUtils';
@@ -8,11 +8,10 @@ import { registerAllCommands } from './commands';
 import { OptimizedSessionManager } from './utils/optimizedSessionManager';
 import { WorkspaceFilter } from './utils/workspaceFilter';
 import { Logger } from './utils/logger';
-import { createStatusBarItem, updateStatusBar } from './utils/statusBarUtils';
 
 export async function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
-    Logger.info('Project Switcher extension activated with optimized session management');
+    Logger.info('Project Switcher extension activated with optimized session management (no status bar)');
 
     // Always show activity bar icon immediately
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', true);
@@ -68,7 +67,7 @@ export async function activate(context: vscode.ExtensionContext) {
     }
 
     state.isInitialized = true;
-    Logger.info('Project Switcher extension fully initialized with optimizations');
+    Logger.info('Project Switcher extension fully initialized with optimizations (no status bar)');
 
     // Show performance tip for users with many tabs
     setTimeout(async () => {
@@ -92,10 +91,18 @@ export async function activate(context: vscode.ExtensionContext) {
     }, 3000);
 }
 
+// NEW: Enhanced context update with conditional disable support
 async function updateContexts() {
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', state.isProjectSwitcherEnabled);
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.hasMultipleProjects',
         state.isProjectSwitcherEnabled && state.projects.length > 1);
+
+    // NEW: Set context for conditional disable functionality
+    const enabledProjects = state.projects.filter(p => p.enabled !== false);
+    const canDisableProjects = enabledProjects.length > 2; // Only allow disable when 3+ projects are enabled
+    await vscode.commands.executeCommand('setContext', 'projectSwitcher.canDisableProjects', canDisableProjects);
+
+    Logger.debug(`Updated contexts - enabled: ${state.isProjectSwitcherEnabled}, multiple: ${state.projects.length > 1}, canDisable: ${canDisableProjects} (${enabledProjects.length} enabled projects)`);
 }
 
 async function setupEnabledMode(
@@ -108,24 +115,26 @@ async function setupEnabledMode(
     await workspaceFilter.storeOriginalConfiguration();
     await workspaceFilter.restoreFilteringState();
 
-    Logger.info('Project Switcher enabled with optimized session management');
-
-    createStatusBarItem(context);
-    updateStatusBar();
+    Logger.info('Project Switcher enabled with optimized session management (no status bar)');
 
     // Setup optimized auto-save with batching
     const autoSaveSubscriptions = setupOptimizedAutoSave(sessionManager);
     autoSaveSubscriptions.forEach(sub => context.subscriptions.push(sub));
 
+    // Enhanced refresh function that updates contexts
     const refreshBothTrees = async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
-        await updateContexts();
+        await updateContexts(); // NEW: Update contexts on refresh
     };
 
     context.subscriptions.push(
         vscode.commands.registerCommand('project-switcher.refreshAllTrees', refreshBothTrees)
     );
+
+    // NEW: Listen for project state changes to update contexts
+    const originalSaveProjects = require('./utils/projectUtils').saveProjects;
+    // This would ideally be done through an event system, but for now we'll update contexts in the command handlers
 }
 
 async function setupReadyMode(
@@ -134,15 +143,16 @@ async function setupReadyMode(
     allProjectsTreeDataProvider: AllProjectsTreeDataProvider,
     sessionManager: OptimizedSessionManager
 ) {
-    Logger.info('Project Switcher in ready mode with optimized session management');
+    Logger.info('Project Switcher in ready mode with optimized session management (no status bar)');
 
     projectTreeDataProvider.refresh();
     allProjectsTreeDataProvider.refresh();
 
+    // Enhanced refresh command that updates contexts
     const refreshCommand = vscode.commands.registerCommand('project-switcher.refreshAllTrees', async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
-        await updateContexts();
+        await updateContexts(); // NEW: Update contexts on refresh
     });
     context.subscriptions.push(refreshCommand);
 }
@@ -205,6 +215,9 @@ function setupOptimizedAutoSave(sessionManager: OptimizedSessionManager): vscode
     return [tabChangeHandler, documentChangeHandler, tabGroupsHandler, windowFocusHandler];
 }
 
+// NEW: Export updateContexts function for use in commands
+export { updateContexts };
+
 export function deactivate() {
     // Save current session before deactivating
     if (state.currentProjectId && state.sessionManager) {
@@ -230,7 +243,7 @@ export function deactivate() {
         state.sessionManager.dispose();
     }
 
-    // Cleanup state
+    // Cleanup state (no status bar disposal needed)
     state.projects.length = 0;
     state.sessions.clear();
     state.currentProjectId = undefined;

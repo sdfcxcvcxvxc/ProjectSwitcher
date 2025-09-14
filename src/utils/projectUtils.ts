@@ -1,10 +1,9 @@
-// src/utils/projectUtils.ts - Restored project switching functionality
+// src/utils/projectUtils.ts - Added dynamic order reassignment for enabled projects
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { state, ProjectConfig, WorkspaceMode } from '../models/models';
 import { Logger } from './logger';
-import { updateStatusBar } from './statusBarUtils';
 
 export function loadProjects(context: vscode.ExtensionContext) {
     const stored = context.globalState.get<ProjectConfig[]>('projects');
@@ -20,6 +19,28 @@ export function saveProjects(context: vscode.ExtensionContext) {
 
     // Refresh both tree providers when projects change
     vscode.commands.executeCommand('project-switcher.refreshAllTrees');
+}
+
+// NEW: Get enabled projects with dynamic order assignment
+export function getEnabledProjectsWithDynamicOrder(): ProjectConfig[] {
+    const enabledProjects = state.projects
+        .filter(project => project.enabled !== false)
+        .sort((a, b) => a.order - b.order);
+
+    return enabledProjects;
+}
+
+// NEW: Get dynamic order for an enabled project (1-based)
+export function getDynamicOrder(projectId: string): number | null {
+    const enabledProjects = getEnabledProjectsWithDynamicOrder();
+    const index = enabledProjects.findIndex(p => p.id === projectId);
+    return index >= 0 ? index + 1 : null;
+}
+
+// NEW: Get project by dynamic order (for keyboard shortcuts)
+export function getProjectByDynamicOrder(dynamicOrder: number): ProjectConfig | undefined {
+    const enabledProjects = getEnabledProjectsWithDynamicOrder();
+    return enabledProjects[dynamicOrder - 1]; // Convert 1-based to 0-based index
 }
 
 export async function detectWorkspaceMode(): Promise<WorkspaceMode> {
@@ -248,9 +269,6 @@ export async function switchToProject(projectId: string): Promise<boolean> {
                 Logger.debug(`No session to restore for project: ${project.name}`);
             }
         }
-
-        // Update statusbar
-        updateStatusBar();
 
         // Refresh tree views
         vscode.commands.executeCommand('project-switcher.refreshAllTrees');
@@ -555,7 +573,8 @@ export async function validateProjectPath(projectPath: string): Promise<boolean>
 }
 
 export function getNextAvailableOrder(): number | null {
-    const usedOrders = new Set(state.projects.map(p => p.order));
+    const enabledProjects = state.projects.filter(p => p.enabled !== false);
+    const usedOrders = new Set(enabledProjects.map(p => p.order));
 
     for (let i = 1; i <= 9; i++) {
         if (!usedOrders.has(i)) {
@@ -566,3 +585,14 @@ export function getNextAvailableOrder(): number | null {
     return null; // All slots 1-9 are taken
 }
 
+// NEW: Get the next order number for re-enabling a project
+export function getNextOrderForReEnable(): number {
+    const enabledProjects = state.projects.filter(p => p.enabled !== false);
+    if (enabledProjects.length === 0) {
+        return 1; // First project
+    }
+
+    // Find the highest order among enabled projects and add 1
+    const maxOrder = Math.max(...enabledProjects.map(p => p.order));
+    return Math.min(maxOrder + 1, 9); // Cap at 9 for keyboard shortcuts
+}

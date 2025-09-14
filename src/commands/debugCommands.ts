@@ -13,7 +13,6 @@ export function registerDebugCommands(context: vscode.ExtensionContext) {
             isProjectSwitcherEnabled: state.isProjectSwitcherEnabled,
             isProjectFilteringEnabled: state.isProjectFilteringEnabled,
             isInitialized: state.isInitialized,
-            hasStatusBarItem: !!state.statusBarItem,
             hasSessionManager: !!state.sessionManager,
             hasWorkspaceFilter: !!state.workspaceFilter,
             sessionsCount: state.sessions.size,

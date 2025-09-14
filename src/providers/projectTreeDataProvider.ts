@@ -1,7 +1,8 @@
-// src/providers/projectTreeDataProvider.ts - Updated with dynamic toggle icons
+// src/providers/projectTreeDataProvider.ts - Updated with Hard Reset option at bottom
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectConfig, ProjectTreeItem, WorkspaceMode } from '../models/models';
+import { getDynamicOrder, getEnabledProjectsWithDynamicOrder } from '../utils/projectUtils';
 
 export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectTreeItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<ProjectTreeItem | undefined>();
@@ -40,6 +41,11 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
                 items.push(...this.getDisabledModeItems());
             }
 
+            // NEW: Always add Hard Reset option at the bottom (with separator)
+            const separatorItem = this.createSeparatorItem();
+            const hardResetItem = this.createHardResetItem();
+            items.push(separatorItem, hardResetItem);
+
             return Promise.resolve(items);
         }
 
@@ -70,6 +76,38 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         item.projectId = '';
         item.project = {} as ProjectConfig;
         item.contextValue = 'toggleItem';
+
+        return item;
+    }
+
+    // NEW: Create separator item for visual separation
+    private createSeparatorItem(): ProjectTreeItem {
+        const item = new vscode.TreeItem('─────────────────────') as ProjectTreeItem;
+        item.description = '';
+        item.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('disabledForeground'));
+        item.projectId = '';
+        item.project = {} as ProjectConfig;
+        item.contextValue = 'separator';
+        item.tooltip = 'Emergency options below';
+        return item;
+    }
+
+    // NEW: Create Hard Reset item
+    private createHardResetItem(): ProjectTreeItem {
+        const item = new vscode.TreeItem('Hard Reset (if has error)') as ProjectTreeItem;
+
+        item.iconPath = new vscode.ThemeIcon('trash', new vscode.ThemeColor('terminal.ansiRed'));
+        item.description = 'Clear all extension data';
+        item.tooltip = 'WARNING: This will completely reset the extension and clear all project data, sessions, and workspace settings. Use only if the extension is in an error state.';
+
+        item.command = {
+            command: 'project-switcher.hardReset',
+            title: 'Hard Reset Extension'
+        };
+
+        item.projectId = '';
+        item.project = {} as ProjectConfig;
+        item.contextValue = 'hardReset';
 
         return item;
     }
@@ -115,7 +153,16 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         // Check if project should be disabled/dimmed
         const isProjectEnabled = project.enabled !== false; // Default to true
 
-        const projectName = `[${project.order}] ${project.name}`;
+        let projectName: string;
+
+        if (isProjectEnabled) {
+            // Show dynamic order for enabled projects
+            const dynamicOrder = getDynamicOrder(project.id);
+            projectName = `[${dynamicOrder}] ${project.name}`;
+        } else {
+            // Show only folder name for disabled projects (no number)
+            projectName = project.name;
+        }
 
         const item = new vscode.TreeItem(
             projectName,
@@ -125,7 +172,7 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         item.projectId = project.id;
         item.project = project;
 
-        // Set context value for different menu items - UPDATED to include enabled/disabled status
+        // Set context value for different menu items
         if (isProjectEnabled) {
             item.contextValue = 'project';
         } else {
@@ -159,15 +206,15 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
             }
             item.description = description;
         } else {
-            // Disabled project styling - dimmed appearance
-            item.iconPath = new vscode.ThemeIcon('circle-outline', new vscode.ThemeColor('disabledForeground'));
+            // Disabled project styling - dimmed appearance with special icon
+            item.iconPath = new vscode.ThemeIcon('circle-slash', new vscode.ThemeColor('disabledForeground'));
             item.description = '• disabled';
 
             // Make the label appear dimmed
             item.resourceUri = vscode.Uri.parse(`disabled:${project.name}`);
         }
 
-        // Enhanced tooltip
+        // Enhanced tooltip with dynamic order info
         const projectPath = project.path;
         const lastUsedDate = new Date(project.lastUsed).toLocaleString();
 
@@ -194,7 +241,14 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
             tooltip += `\nFiltering: ${filterStatus}`;
         }
 
-        tooltip += `\nShortcut: Ctrl+Alt+${project.order}`;
+        // Enhanced shortcut info with dynamic order explanation
+        if (isProjectEnabled) {
+            const dynamicOrder = getDynamicOrder(project.id);
+            tooltip += `\nShortcut: Ctrl+Alt+${dynamicOrder} (dynamic based on enabled projects)`;
+        } else {
+            tooltip += `\nOriginal order: ${project.order} (disabled - no shortcut)`;
+            tooltip += `\nWhen re-enabled, will be assigned to next available position`;
+        }
 
         if (!isProjectEnabled) {
             tooltip += `\nStatus: Disabled`;
@@ -202,8 +256,6 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         } else {
             tooltip += `\nClick disable icon to disable project`;
         }
-
-        item.tooltip = tooltip;
 
         // Direct click to switch project (only for enabled projects)
         if (isProjectEnabled) {

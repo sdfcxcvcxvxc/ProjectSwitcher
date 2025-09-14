@@ -1,7 +1,8 @@
-// src/providers/allProjectsTreeDataProvider.ts - New provider for Explorer sidebar
+// src/providers/allProjectsTreeDataProvider.ts - Updated with dynamic order display
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectConfig, ProjectTreeItem } from '../models/models';
+import { getEnabledProjectsWithDynamicOrder } from '../utils/projectUtils';
 
 export class AllProjectsTreeDataProvider implements vscode.TreeDataProvider<ProjectTreeItem> {
     private _onDidChangeTreeData = new vscode.EventEmitter<ProjectTreeItem | undefined>();
@@ -17,30 +18,32 @@ export class AllProjectsTreeDataProvider implements vscode.TreeDataProvider<Proj
 
     getChildren(element?: ProjectTreeItem): Thenable<ProjectTreeItem[]> {
         if (!element) {
-            // Root level - show all projects sorted by order, excluding current project
-            const availableProjects = [...state.projects]
-                .filter(project => project.id !== state.currentProjectId) // Exclude current project
-                .sort((a, b) => a.order - b.order);
+            // Root level - show enabled projects only, excluding current project
+            const enabledProjects = getEnabledProjectsWithDynamicOrder()
+                .filter(project => project.id !== state.currentProjectId);
 
-            if (availableProjects.length === 0) {
-                const item = new vscode.TreeItem('No other projects') as ProjectTreeItem;
-                item.description = state.currentProjectId ? 'Current project only' : 'No projects available';
+            if (enabledProjects.length === 0) {
+                const item = new vscode.TreeItem('No other enabled projects') as ProjectTreeItem;
+                item.description = state.currentProjectId ? 'Current project only' : 'No enabled projects available';
                 item.projectId = '';
                 item.project = {} as ProjectConfig;
                 return Promise.resolve([item]);
             }
 
-            return Promise.resolve(availableProjects.map(project => this.createAllProjectTreeItem(project)));
+            return Promise.resolve(enabledProjects.map((project, index) =>
+                this.createAllProjectTreeItem(project, index + 1)
+            ));
         }
 
         return Promise.resolve([]);
     }
 
-    private createAllProjectTreeItem(project: ProjectConfig): ProjectTreeItem {
+    private createAllProjectTreeItem(project: ProjectConfig, dynamicOrder: number): ProjectTreeItem {
         const sessionEnabled = project.sessionEnabled !== false; // Default to enabled
         const hasSession = state.sessions.has(project.id);
 
-        const projectName = `[${project.order}] ${project.name}`;
+        // Show dynamic order instead of original order
+        const projectName = `[${dynamicOrder}] ${project.name}`;
 
         const item = new vscode.TreeItem(
             projectName,
@@ -63,7 +66,7 @@ export class AllProjectsTreeDataProvider implements vscode.TreeDataProvider<Proj
         }
         item.description = description;
 
-        // Enhanced tooltip with session information
+        // Enhanced tooltip with dynamic order information
         const projectPath = project.path;
         const lastUsedDate = new Date(project.lastUsed).toLocaleString();
 
@@ -83,7 +86,8 @@ export class AllProjectsTreeDataProvider implements vscode.TreeDataProvider<Proj
             }
         }
 
-        tooltip += `\nShortcut: Ctrl+Alt+${project.order}`;
+        tooltip += `\nShortcut: Ctrl+Alt+${dynamicOrder} (dynamic based on enabled projects)`;
+        tooltip += `\nOriginal order: ${project.order}`;
         tooltip += `\nClick to switch to this project`;
 
         item.tooltip = tooltip;

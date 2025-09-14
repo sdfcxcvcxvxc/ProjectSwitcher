@@ -2,7 +2,7 @@
   "name": "projects-switcher",
   "displayName": "Projects Switcher",
   "description": "Switch between project folders while preserving tabs and sessions with intelligent workspace filtering",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "khanhromvn",
   "author": {
     "name": "KhanhRomVN",
@@ -85,11 +85,6 @@
         "icon": "$(arrow-down)"
       },
       {
-        "command": "project-switcher.showProjectMenu",
-        "title": "Project Menu",
-        "icon": "$(list-selection)"
-      },
-      {
         "command": "project-switcher.enable",
         "title": "Enable Project Switcher",
         "icon": "$(folder-library)"
@@ -128,6 +123,11 @@
       {
         "command": "project-switcher.debugActivityBar",
         "title": "Debug: Activity Bar Issues"
+      },
+      {
+        "command": "project-switcher.hardReset",
+        "title": "Hard Reset (if has error)",
+        "icon": "$(trash)"
       }
     ],
     "keybindings": [
@@ -165,7 +165,7 @@
         "command": "project-switcher.switchToProject6",
         "key": "ctrl+alt+6",
         "mac": "cmd+alt+6",
-        "when": "config.projectSwitcher.enableKeyboardShortches"
+        "when": "config.projectSwitcher.enableKeyboardShortcuts"
       },
       {
         "command": "project-switcher.switchToProject7",
@@ -226,7 +226,7 @@
         },
         {
           "command": "project-switcher.disableProject",
-          "when": "view == projectManager && viewItem == project",
+          "when": "view == projectManager && viewItem == project && projectSwitcher.canDisableProjects",
           "group": "inline@1"
         },
         {
