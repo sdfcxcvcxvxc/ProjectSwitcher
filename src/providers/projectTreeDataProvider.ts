@@ -1,4 +1,4 @@
-// src/providers/projectTreeDataProvider.ts - Updated with Hard Reset option at bottom
+// src/providers/projectTreeDataProvider.ts - Updated with Big Warning after Hard Reset
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { state, ProjectConfig, ProjectTreeItem, WorkspaceMode } from '../models/models';
@@ -41,10 +41,19 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
                 items.push(...this.getDisabledModeItems());
             }
 
-            // NEW: Always add Hard Reset option at the bottom (with separator)
+            // Always add Hard Reset option with separator
             const separatorItem = this.createSeparatorItem();
             const hardResetItem = this.createHardResetItem();
+
             items.push(separatorItem, hardResetItem);
+
+            // NEW: Add big warning item right after Hard Reset
+            const bigWarningItem = this.createBigWarningItem();
+            items.push(bigWarningItem);
+
+            if (!state.isProjectSwitcherEnabled && this.hasNonDefaultExcludes()) {
+                items.push(this.createOldWarningItem());
+            }
 
             return Promise.resolve(items);
         }
@@ -80,7 +89,6 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         return item;
     }
 
-    // NEW: Create separator item for visual separation
     private createSeparatorItem(): ProjectTreeItem {
         const item = new vscode.TreeItem('─────────────────────') as ProjectTreeItem;
         item.description = '';
@@ -92,7 +100,6 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         return item;
     }
 
-    // NEW: Create Hard Reset item
     private createHardResetItem(): ProjectTreeItem {
         const item = new vscode.TreeItem('Hard Reset (if has error)') as ProjectTreeItem;
 
@@ -112,8 +119,99 @@ export class ProjectTreeDataProvider implements vscode.TreeDataProvider<ProjectT
         return item;
     }
 
+    // NEW: Create big warning item - double height and very prominent
+    private createBigWarningItem(): ProjectTreeItem {
+        const item = new vscode.TreeItem('🚨🚨 BEFORE UNINSTALLING EXTENSION 🚨🚨') as ProjectTreeItem;
+
+        item.description = 'MUST READ BEFORE REMOVING EXTENSION!';
+        item.iconPath = new vscode.ThemeIcon('alert', new vscode.ThemeColor('errorForeground'));
+
+        // Enhanced tooltip with critical information
+        item.tooltip = `🚨 CRITICAL WARNING 🚨
+
+BEFORE uninstalling this extension, you MUST:
+
+1. Click "Disable Project Switcher" button above
+2. OR click "Hard Reset (if has error)" option above
+
+If you uninstall without doing this:
+❌ Some folders may remain hidden forever
+❌ Your workspace .vscode/settings.json will keep hiding folders
+❌ You'll need to manually edit settings.json to fix it
+
+ALWAYS clean up before uninstalling!
+
+Click this warning to see detailed removal instructions.`;
+
+        // Make it highly visible with resource URI for custom styling
+        item.resourceUri = vscode.Uri.parse('warning:big-removal');
+
+        item.command = {
+            command: 'project-switcher.showRemovalWarning',
+            title: 'Show Critical Removal Warning'
+        };
+
+        item.projectId = '';
+        item.project = {} as ProjectConfig;
+        item.contextValue = 'bigRemovalWarning';
+
+        return item;
+    }
+
+    // Rename old warning to avoid confusion
+    private createOldWarningItem(): ProjectTreeItem {
+        const item = new vscode.TreeItem('⚠️ Folders might be hidden') as ProjectTreeItem;
+
+        item.description = 'Click to fix hidden folders';
+        item.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('terminal.ansiYellow'));
+        item.tooltip = 'Extension settings might be hiding folders. Click to clean up workspace settings.';
+        item.command = {
+            command: 'project-switcher.cleanupSettings',
+            title: 'Clean Up Settings'
+        };
+
+        item.projectId = '';
+        item.project = {} as ProjectConfig;
+        item.contextValue = 'oldWarning';
+
+        return item;
+    }
+
+    private hasNonDefaultExcludes(): boolean {
+        const config = vscode.workspace.getConfiguration();
+        const currentExcludes = config.get<{ [key: string]: boolean }>('files.exclude') || {};
+
+        const defaultExcludes = {
+            '**/.git': true,
+            '**/.svn': true,
+            '**/.hg': true,
+            '**/.DS_Store': true,
+            '**/Thumbs.db': true
+        };
+
+        // Check if there are any non-default exclude patterns
+        return Object.keys(currentExcludes).some(key =>
+            !(key in defaultExcludes) && currentExcludes[key] === true
+        );
+    }
+
     private getDisabledModeItems(): ProjectTreeItem[] {
         const items: ProjectTreeItem[] = [];
+
+        // Show warning if non-default excludes are present
+        if (this.hasNonDefaultExcludes()) {
+            const warningItem = new vscode.TreeItem('⚠️ WARNING: Folders might be hidden') as ProjectTreeItem;
+            warningItem.description = 'Click to fix';
+            warningItem.iconPath = new vscode.ThemeIcon('warning', new vscode.ThemeColor('errorForeground'));
+            warningItem.tooltip = 'Extension settings might be hiding folders. Click to clean up workspace settings.';
+            warningItem.command = {
+                command: 'project-switcher.cleanupSettings',
+                title: 'Clean Up Settings'
+            };
+            warningItem.projectId = '';
+            warningItem.project = {} as ProjectConfig;
+            items.push(warningItem);
+        }
 
         if (state.workspaceMode === WorkspaceMode.ParentDirectory) {
             const infoItem = new vscode.TreeItem('Multi-folder workspace detected') as ProjectTreeItem;

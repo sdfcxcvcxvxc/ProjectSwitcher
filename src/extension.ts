@@ -1,4 +1,4 @@
-// src/extension.ts - Updated with context management for conditional disable functionality
+// src/extension.ts - Updated with cleanup logic in deactivate function
 import * as vscode from 'vscode';
 import { state, WorkspaceMode } from './models/models';
 import { initializeProjectSwitcher, loadProjects } from './utils/projectUtils';
@@ -221,32 +221,34 @@ function setupOptimizedAutoSave(sessionManager: OptimizedSessionManager): vscode
 // Export updateContexts function for use in commands
 export { updateContexts };
 
-export function deactivate() {
-    // Save current session before deactivating
-    if (state.currentProjectId && state.sessionManager) {
+export async function deactivate() {
+    try {
+        // CRITICAL: Luôn khôi phục cài đặt workspace khi extension bị vô hiệu hóa
+        if (state.workspaceFilter) {
+            await state.workspaceFilter.forceCleanupWorkspaceSettings();
+        } else {
+            // Fallback: thử xóa trực tiếp setting
+            const config = vscode.workspace.getConfiguration();
+            await config.update('files.exclude', undefined, vscode.ConfigurationTarget.Workspace);
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+        }
+    } catch (error) {
+        Logger.error('Error during cleanup in deactivate', error);
+
+        // Fallback: thử xóa trực tiếp setting
         try {
-            // Force synchronous save on deactivation
-            state.sessionManager.saveCurrentSession();
-        } catch (error) {
-            Logger.warn('Failed to save session during deactivation', error);
+            const config = vscode.workspace.getConfiguration();
+            await config.update('files.exclude', undefined, vscode.ConfigurationTarget.Workspace);
+        } catch (fallbackError) {
+            Logger.error('Fallback cleanup also failed', fallbackError);
         }
     }
 
-    // Restore original configuration
-    if (state.workspaceFilter) {
-        try {
-            state.workspaceFilter.restoreOriginalConfiguration();
-        } catch (error) {
-            Logger.warn('Failed to restore workspace filter during deactivation', error);
-        }
-    }
-
-    // Dispose optimized session manager
+    // Cleanup các thành phần khác
     if (state.sessionManager && typeof state.sessionManager.dispose === 'function') {
         state.sessionManager.dispose();
     }
 
-    // Cleanup state (no status bar disposal needed)
     state.projects.length = 0;
     state.sessions.clear();
     state.currentProjectId = undefined;

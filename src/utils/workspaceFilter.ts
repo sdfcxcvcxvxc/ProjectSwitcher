@@ -183,7 +183,6 @@ export class WorkspaceFilter {
         }
     }
 
-    // FIXED: Properly restore original configuration and show ALL folders
     async restoreOriginalConfiguration(): Promise<void> {
         try {
             const config = vscode.workspace.getConfiguration();
@@ -199,6 +198,9 @@ export class WorkspaceFilter {
                 this.originalExcludes,
                 vscode.ConfigurationTarget.Workspace
             );
+
+            // Clean up empty settings file
+            await this.cleanupEmptySettingsFile();
 
             // Verify the configuration was applied
             const updatedConfig = vscode.workspace.getConfiguration();
@@ -247,6 +249,47 @@ export class WorkspaceFilter {
         }
     }
 
+    private async cleanupEmptySettingsFile(): Promise<void> {
+        try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) return;
+
+            const settingsPath = path.join(workspaceFolder.uri.fsPath, '.vscode', 'settings.json');
+
+            // Kiểm tra nếu file settings.json tồn tại
+            try {
+                await fs.promises.access(settingsPath);
+            } catch {
+                return; // Không tồn tại thì không cần làm gì
+            }
+
+            // Đọc nội dung file
+            const settingsContent = await fs.promises.readFile(settingsPath, 'utf8');
+            const settings = JSON.parse(settingsContent);
+
+            // Xóa thuộc tính files.exclude
+            if (settings['files.exclude']) {
+                delete settings['files.exclude'];
+            }
+
+            // Nếu file trống thì xóa hoàn toàn
+            if (Object.keys(settings).length === 0) {
+                await fs.promises.unlink(settingsPath);
+                Logger.info('Removed empty settings.json file');
+            } else {
+                // Ghi lại file với nội dung đã được dọn dẹp
+                await fs.promises.writeFile(
+                    settingsPath,
+                    JSON.stringify(settings, null, 4),
+                    'utf8'
+                );
+                Logger.info('Cleaned settings.json file');
+            }
+        } catch (error) {
+            Logger.warn('Could not cleanup settings file', error);
+        }
+    }
+
     getFilteringStatus(): { isFiltering: boolean; activeProject?: string } {
         return {
             isFiltering: this.isFiltering,
@@ -257,6 +300,33 @@ export class WorkspaceFilter {
     async restoreFilteringState(): Promise<void> {
         if (this.isFiltering && this.currentActiveProject) {
             await this.enableProjectFiltering(this.currentActiveProject);
+        }
+    }
+
+    async forceCleanupWorkspaceSettings(): Promise<void> {
+        try {
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (!workspaceFolder) return;
+
+            const config = vscode.workspace.getConfiguration();
+
+            // Xóa hoàn toàn thiết lập files.exclude
+            await config.update(
+                WorkspaceFilter.FILTERED_FILES_KEY,
+                undefined, // Xóa hoàn toàn setting
+                vscode.ConfigurationTarget.Workspace
+            );
+
+            // Xóa file settings.json nếu nó trống
+            await this.cleanupEmptySettingsFile();
+
+            // Refresh explorer để đảm bảo thay đổi có hiệu lực
+            await vscode.commands.executeCommand('workbench.files.action.refreshFilesExplorer');
+
+            Logger.info('Force cleanup completed - removed all files.exclude settings');
+        } catch (error) {
+            Logger.error('Failed to force cleanup workspace settings', error);
+            throw error;
         }
     }
 }

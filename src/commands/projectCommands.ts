@@ -68,6 +68,82 @@ export function registerProjectCommands(
         vscode.commands.registerCommand('project-switcher.hardReset', () =>
             performHardReset(context, treeDataProvider)),
 
+        // Cleanup workspace settings
+        vscode.commands.registerCommand('project-switcher.cleanupSettings', () =>
+            cleanupWorkspaceSettings(context, treeDataProvider)),
+
+        // Extension removal warning command
+        vscode.commands.registerCommand('project-switcher.showRemovalWarning', () => {
+            const message = `🚨🚨 CRITICAL: EXTENSION REMOVAL WARNING 🚨🚨
+
+BEFORE uninstalling Project Switcher extension, you MUST do ONE of these:
+
+✅ OPTION 1 (Recommended):
+   1. Click "Disable Project Switcher" button in the tree view above
+   2. This will automatically clean up all workspace settings
+   3. Then you can safely uninstall the extension
+
+✅ OPTION 2 (Emergency):
+   1. Click "Hard Reset (if has error)" button in the tree view above
+   2. This will completely clean all extension data and settings
+   3. Then you can safely uninstall the extension
+
+✅ OPTION 3 (Manual):
+   1. Open your workspace folder
+   2. Navigate to .vscode/settings.json
+   3. Remove the "files.exclude" section that was added by this extension
+   4. Save the file
+
+❌ WHAT HAPPENS IF YOU DON'T DO THIS:
+   • Some project folders will remain permanently hidden
+   • Your workspace .vscode/settings.json will keep the "files.exclude" settings
+   • You'll have to manually edit settings.json to fix the issue
+   • Other developers opening the workspace will also see hidden folders
+
+🔧 TECHNICAL INFO:
+This extension modifies your workspace's "files.exclude" setting to hide/show project folders. If you uninstall without cleaning up, these settings remain in your .vscode/settings.json file.
+
+⚠️ ALWAYS CLEAN UP FIRST BEFORE UNINSTALLING!
+
+Current extension state:
+• Extension enabled: ${state.isProjectSwitcherEnabled ? 'Yes' : 'No'}
+• Projects configured: ${state.projects.length}
+• Workspace filtering active: ${state.isProjectFilteringEnabled ? 'Yes' : 'No'}`;
+
+            vscode.window.showWarningMessage(
+                message,
+                { modal: true },
+                'Open .vscode/settings.json',
+                'Run Hard Reset Now',
+                'Disable Extension Now',
+                'I Understand'
+            ).then(selection => {
+                if (selection === 'Open .vscode/settings.json') {
+                    // Try to open the workspace settings.json file
+                    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+                    if (workspaceFolder) {
+                        const settingsPath = vscode.Uri.joinPath(workspaceFolder.uri, '.vscode', 'settings.json');
+                        vscode.workspace.openTextDocument(settingsPath).then(doc => {
+                            vscode.window.showTextDocument(doc);
+                        }, error => {
+                            // Handle error case
+                            vscode.window.showErrorMessage('Could not open .vscode/settings.json. The file may not exist yet.');
+                        });
+                    } else {
+                        vscode.window.showErrorMessage('No workspace folder found.');
+                    }
+                } else if (selection === 'Run Hard Reset Now') {
+                    vscode.commands.executeCommand('project-switcher.hardReset');
+                } else if (selection === 'Disable Extension Now') {
+                    vscode.commands.executeCommand('project-switcher.toggleMode');
+                } else if (selection === 'I Understand') {
+                    vscode.window.showInformationMessage(
+                        'Great! Remember to clean up before uninstalling. You can always click the warning again if you need these instructions.'
+                    );
+                }
+            });
+        }),
+
         // Keyboard shortcut commands (1-9) with DYNAMIC ordering
         ...Array.from({ length: 9 }, (_, i) => {
             const dynamicOrder = i + 1;
@@ -816,5 +892,48 @@ async function resetVSCodeContexts() {
         Logger.info('Reset all VS Code contexts');
     } catch (error) {
         Logger.error('Failed to reset VS Code contexts', error);
+    }
+}
+
+async function cleanupWorkspaceSettings(
+    context: vscode.ExtensionContext,
+    treeDataProvider: ProjectTreeDataProvider
+) {
+    try {
+        // Get current configuration
+        const config = vscode.workspace.getConfiguration();
+        const currentExcludes = config.get<{ [key: string]: boolean }>('files.exclude') || {};
+
+        // Define default excludes that should remain
+        const defaultExcludes = {
+            '**/.git': true,
+            '**/.svn': true,
+            '**/.hg': true,
+            '**/.DS_Store': true,
+            '**/Thumbs.db': true
+        };
+
+        // Remove only non-default excludes
+        let hasChanges = false;
+        const newExcludes = { ...currentExcludes };
+
+        for (const key in currentExcludes) {
+            if (!(key in defaultExcludes) && currentExcludes[key] === true) {
+                delete newExcludes[key];
+                hasChanges = true;
+            }
+        }
+
+        if (hasChanges) {
+            await config.update('files.exclude', newExcludes, vscode.ConfigurationTarget.Workspace);
+            vscode.window.showInformationMessage('Đã dọn dẹp cài đặt workspace. Các folder bị ẩn đã được hiển thị lại.');
+        } else {
+            vscode.window.showInformationMessage('Không tìm thấy cài đặt cần dọn dẹp.');
+        }
+
+        treeDataProvider.refresh();
+    } catch (error: any) {
+        Logger.error('Failed to cleanup workspace settings', error);
+        vscode.window.showErrorMessage(`Dọn dẹp thất bại: ${error.message}`);
     }
 }
