@@ -297,7 +297,7 @@ async function enableProject(
         updateProject(project.id, { enabled: true });
         saveProjects(context);
 
-        // Update contexts
+        // Update contexts immediately after enabling
         if (updateContexts) {
             await updateContexts();
         }
@@ -362,7 +362,7 @@ async function disableProject(
         updateProject(project.id, { enabled: false });
         saveProjects(context);
 
-        // Update UI contexts after disabling project
+        // Update UI contexts immediately after disabling project
         if (updateContexts) {
             await updateContexts();
         }

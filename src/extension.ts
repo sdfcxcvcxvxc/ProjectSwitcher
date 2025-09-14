@@ -8,6 +8,7 @@ import { registerAllCommands } from './commands';
 import { OptimizedSessionManager } from './utils/optimizedSessionManager';
 import { WorkspaceFilter } from './utils/workspaceFilter';
 import { Logger } from './utils/logger';
+import { setUpdateContexts } from './commands/projectCommands';
 
 export async function activate(context: vscode.ExtensionContext) {
     Logger.initialize();
@@ -49,7 +50,8 @@ export async function activate(context: vscode.ExtensionContext) {
         Logger.error('Failed to create tree views', error);
     }
 
-    // Register all commands with optimized session manager
+    // Set up the updateContexts function and register commands
+    setUpdateContexts(updateContexts);
     registerAllCommands(context, projectTreeDataProvider, sessionManager, allProjectsTreeDataProvider);
 
     // Detect workspace mode and initialize
@@ -91,13 +93,13 @@ export async function activate(context: vscode.ExtensionContext) {
     }, 3000);
 }
 
-// NEW: Enhanced context update with conditional disable support
+// Enhanced context update with conditional disable support
 async function updateContexts() {
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.isEnabled', state.isProjectSwitcherEnabled);
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.hasMultipleProjects',
         state.isProjectSwitcherEnabled && state.projects.length > 1);
 
-    // NEW: Set context for conditional disable functionality
+    // Set context for conditional disable functionality
     const enabledProjects = state.projects.filter(p => p.enabled !== false);
     const canDisableProjects = enabledProjects.length > 2; // Only allow disable when 3+ projects are enabled
     await vscode.commands.executeCommand('setContext', 'projectSwitcher.canDisableProjects', canDisableProjects);
@@ -125,16 +127,12 @@ async function setupEnabledMode(
     const refreshBothTrees = async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
-        await updateContexts(); // NEW: Update contexts on refresh
+        await updateContexts(); // Update contexts on refresh
     };
 
     context.subscriptions.push(
         vscode.commands.registerCommand('project-switcher.refreshAllTrees', refreshBothTrees)
     );
-
-    // NEW: Listen for project state changes to update contexts
-    const originalSaveProjects = require('./utils/projectUtils').saveProjects;
-    // This would ideally be done through an event system, but for now we'll update contexts in the command handlers
 }
 
 async function setupReadyMode(
@@ -152,7 +150,7 @@ async function setupReadyMode(
     const refreshCommand = vscode.commands.registerCommand('project-switcher.refreshAllTrees', async () => {
         projectTreeDataProvider.refresh();
         allProjectsTreeDataProvider.refresh();
-        await updateContexts(); // NEW: Update contexts on refresh
+        await updateContexts(); // Update contexts on refresh
     });
     context.subscriptions.push(refreshCommand);
 }
@@ -215,7 +213,7 @@ function setupOptimizedAutoSave(sessionManager: OptimizedSessionManager): vscode
     return [tabChangeHandler, documentChangeHandler, tabGroupsHandler, windowFocusHandler];
 }
 
-// NEW: Export updateContexts function for use in commands
+// Export updateContexts function for use in commands
 export { updateContexts };
 
 export function deactivate() {
